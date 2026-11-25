@@ -1,0 +1,393 @@
+/**
+ * @file
+ * Handles large tables by wrapping them in a scrollable container and providing a fullscreen modal view.
+ *
+ * This script identifies tables with the class 'ecl-table', wraps them in a scrollable container, and adds a button to open the table in a fullscreen modal. The modal is created using the ECL Modal component, ensuring accessibility and responsiveness.
+ *
+ * Key Features:
+ * - Unique ID generation for each table instance to ensure proper labeling and modal functionality.
+ * - Accessibility enhancements, including ARIA attributes and keyboard navigation support.
+ * - Dynamic DOM manipulation to insert necessary elements without disrupting existing content.
+ *
+ * Usage:
+ * Include this script in your Drupal theme's library and ensure that the ECL Modal component is available for proper functionality.
+ */
+(function (Drupal, once) {
+  'use strict';
+
+  // Persist counter across AJAX refreshes
+  let tableCounter = 0;
+  let modalOpenCount = 0;
+  const SHARED_MODAL_ID = 'cnt-ecl-table-fullscreen-modal-shared';
+
+  /**
+   * Theme functions for secure HTML generation.
+  */
+  Drupal.theme.eclTableModal = function (id) {
+    const safeId = Drupal.checkPlain(id);
+    return /* html */ `
+      <dialog data-ecl-auto-init="Modal" id="${safeId}" aria-modal="true" class="ecl-modal ecl-modal--l cnt-table-fullscreen-modal" aria-labelledby="${safeId}-header">
+        <div class="ecl-modal__container ecl">
+          <div class="ecl-modal__content ecl-container">
+            <header class="ecl-modal__header">
+              <div class="ecl-modal__header-content" id="${safeId}-header">${Drupal.t('Expanded table')}</div>
+              <button class="ecl-button ecl-button--tertiary ecl-button--m ecl-button--secondary ecl-modal__close ecl-button--icon-only" aria-label="${Drupal.t('Close')}" type="button" data-ecl-modal-close>
+                <span class="ecl-button__container">
+                  <span class="ecl-button__label" data-ecl-label="true">${Drupal.t('Close')}</span>
+                  <span class="wt-icon--close ecl-icon ecl-icon--m ecl-button__icon ecl-icon--close" aria-hidden="true" data-ecl-icon></span>
+                </span>
+              </button>
+            </header>
+            <div class="ecl-modal__body ecl-u-mt-m">
+             <div class="ecl-row">
+              <div class="ecl-col-12 cnt-font-size-controls ecl-u-mb-m"></div>
+               <div class="ecl-col-12">
+                <div class="ecl-modal__body-scroll"></div>
+              </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </dialog>`;
+  };
+
+  Drupal.theme.eclTableExpandButton = function () {
+    return /* html */ `
+      <span class="ecl-button__container">
+        <span class="ecl-button__label" data-ecl-label="true">${Drupal.t('Expand table')}</span>
+        <span class="wt-icon--fullscreen ecl-icon ecl-icon--m ecl-button__icon ecl-icon--fullscreen" aria-hidden="true" data-ecl-icon></span>
+      </span>`;
+  };
+
+  Drupal.theme.eclTableFontSizeControls = function () {
+    return /* html */ `
+      <button class="ecl-button ecl-button--secondary cnt-btn-decrease ecl-u-mr-s" type="button">
+        <span class="ecl-button__container">
+          <span class="ecl-button__label" data-ecl-label="true">${Drupal.t('Decrease font')}</span>
+          <span class="wt-icon--minus ecl-icon ecl-icon--m ecl-button__icon ecl-icon--minus" aria-hidden="true" data-ecl-icon></span>
+       </span>
+      </button>
+      <button class="ecl-button ecl-button--secondary cnt-btn-increase" type="button">
+        <span class="ecl-button__container">
+          <span class="ecl-button__label" data-ecl-label="true">${Drupal.t('Increase font')}</span>
+          <span class="wt-icon--plus ecl-icon ecl-icon--m ecl-button__icon ecl-icon--plus" aria-hidden="true" data-ecl-icon></span>
+        </span>
+      </button>`;
+  };
+
+  /**
+   * Ensures the shared modal exists in the DOM.
+   */
+  function ensureSharedModal() {
+    if (document.getElementById(SHARED_MODAL_ID)) return;
+
+    const modalHtml = Drupal.theme('eclTableModal', SHARED_MODAL_ID);
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    const modalElement = document.getElementById(SHARED_MODAL_ID);
+
+    const controlsContainer = modalElement.querySelector('.cnt-font-size-controls');
+    if (controlsContainer) {
+      const controlsHtml = Drupal.theme('eclTableFontSizeControls');
+      controlsContainer.insertAdjacentHTML('afterbegin', controlsHtml);
+    }
+
+    const decreaseBtn = modalElement.querySelector('.cnt-btn-decrease');
+    const increaseBtn = modalElement.querySelector('.cnt-btn-increase');
+
+    if (decreaseBtn) {
+      decreaseBtn.addEventListener('click', () => {
+        const activeTable = modalElement.querySelector('.cnt-ecl-table-force-fit');
+        if (!activeTable) return;
+
+        const currentSizePx = parseFloat(window.getComputedStyle(activeTable).fontSize);
+        const newSizePx = Math.max(currentSizePx - 1, 10);
+
+        // 1. Update text size
+        activeTable.style.setProperty('font-size', `${newSizePx}px`, 'important');
+        activeTable.querySelectorAll('td, th, p, a, span').forEach(el => {
+          el.style.setProperty('font-size', `${newSizePx}px`, 'important');
+        });
+
+        // 2. Scale images proportionally from their original loaded width
+        const initialFont = parseFloat(activeTable.dataset.initialFont) || 16;
+        const scaleFactor = newSizePx / initialFont;
+
+        activeTable.querySelectorAll('img').forEach(img => {
+          const originalWidth = parseFloat(img.dataset.originalWidth) || 100;
+          const newWidth = Math.round(originalWidth * scaleFactor);
+          img.style.setProperty('width', `${newWidth}px`, 'important');
+          img.style.setProperty('height', 'auto', 'important');
+        });
+      });
+    }
+
+    if (increaseBtn) {
+      increaseBtn.addEventListener('click', () => {
+        const activeTable = modalElement.querySelector('.cnt-ecl-table-force-fit');
+        if (!activeTable) return;
+
+        const currentSizePx = parseFloat(window.getComputedStyle(activeTable).fontSize);
+        const newSizePx = Math.min(currentSizePx + 1, 48);
+
+        // 1. Update text size
+        activeTable.style.setProperty('font-size', `${newSizePx}px`, 'important');
+        activeTable.querySelectorAll('td, th, p, a, span').forEach(el => {
+          el.style.setProperty('font-size', `${newSizePx}px`, 'important');
+        });
+
+        // 2. Scale images proportionally from their original loaded width
+        const initialFont = parseFloat(activeTable.dataset.initialFont) || 16;
+        const scaleFactor = newSizePx / initialFont;
+
+        activeTable.querySelectorAll('img').forEach(img => {
+          const originalWidth = parseFloat(img.dataset.originalWidth) || 100;
+          const newWidth = Math.round(originalWidth * scaleFactor);
+          img.style.setProperty('width', `${newWidth}px`, 'important');
+          img.style.setProperty('height', 'auto', 'important');
+        });
+      });
+    }
+
+    // Accessibility: Handle closing logic
+    modalElement.addEventListener('close', () => {
+      document.body.classList.remove('cnt-table-modal-open');
+
+      const activeTable = modalElement.querySelector('.cnt-ecl-table-force-fit');
+      if (activeTable) {
+        activeTable.style.removeProperty('font-size');
+      }
+      // Find the specific button that opened this modal instance
+      const activeTrigger = document.querySelector(`button[aria-controls="${SHARED_MODAL_ID}"][aria-expanded="true"]`);
+
+      if (activeTrigger) {
+        // Reset state and return focus to the user's previous position
+        activeTrigger.setAttribute('aria-expanded', 'false');
+        activeTrigger.focus();
+      }
+
+      const closePayload = {
+        pageUrl: window.location.href,
+        tableId: activeTable ? activeTable.id : null
+      };
+
+      const closeEvent = new CustomEvent('cntLargeTableModalClosed', {
+        detail: closePayload,
+        bubbles: true,
+        cancelable: true
+      });
+
+      window.dispatchEvent(closeEvent);
+
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'cntLargeTableModalClosed',
+        ...closePayload
+      });
+
+    });
+
+    modalElement.addEventListener('click', (e) => {
+      const modalContentBox = modalElement.querySelector('.ecl-modal__content');
+      if (!modalContentBox) return;
+
+      const isClickInside = modalContentBox.contains(e.target);
+
+      // If the user clicks outside on the background backdrop
+      if (!isClickInside) {
+        if (typeof ECL !== 'undefined' && ECL.components) {
+
+          const frameworkInstance = ECL.components.get(modalElement);
+
+          if (frameworkInstance) {
+            const closeMethod = frameworkInstance.closeModal || frameworkInstance.close;
+            if (closeMethod) {
+              closeMethod.call(frameworkInstance);
+              return;
+            }
+          }
+        }
+
+        // Ultimate browser fallback if framework components are out of scope
+        if (typeof modalElement.close === 'function') {
+          modalElement.close();
+        }
+      }
+    });
+  }
+
+  Drupal.behaviors.eclTableFullscreen = {
+    attach: function (context) {
+      ensureSharedModal();
+      const modalElement = document.getElementById(SHARED_MODAL_ID);
+
+      // Process each table exactly once
+      const tables = once('eclTableFullscreen', '.ecl-table', context);
+
+      // Only target tables that are strictly higher than 500px
+      tables.forEach(function (table) {
+        if (table.offsetHeight <= 500) {
+          return;
+        }
+
+        tableCounter++;
+        // Generate and sanitize the ID
+        const rawId = table.id || `cnt-ecl-table-instance-${tableCounter}`;
+        const sanitizedId = rawId.replace(/[^a-z0-9-_]/gi, '-');
+
+        // Sync the ID back to the original table for A11y and Focus management
+        table.id = sanitizedId;
+
+        // Create Action Wrapper
+        const actionWrapper = document.createElement('div');
+        actionWrapper.classList.add('cnt-table-action-wrapper');
+
+        // Create Trigger Button
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ecl-button ecl-button--secondary';
+        btn.innerHTML = Drupal.theme('eclTableExpandButton');
+
+        // Accessibility: State initialization
+        btn.setAttribute('aria-controls', SHARED_MODAL_ID);
+        btn.setAttribute('aria-haspopup', 'dialog');
+        btn.setAttribute('aria-expanded', 'false');
+
+        actionWrapper.appendChild(btn);
+
+        // Create Scroll Wrapper
+        const wrapper = document.createElement('div');
+        wrapper.className = 'cnt-ecl-table-scroll-container';
+        wrapper.setAttribute('role', 'region');
+
+        // Handle Caption and A11y Labeling
+        const caption = table.querySelector('caption');
+        if (caption) {
+          if (!caption.id) {
+            caption.id = `${sanitizedId}-caption`;
+          }
+          wrapper.setAttribute('aria-labelledby', Drupal.checkPlain(caption.id));
+        }
+
+        // Accessibility: Keyboard Navigation for scrolling tables
+        const updateTabindex = () => {
+          const hasOverflow = wrapper.scrollWidth > wrapper.clientWidth;
+          hasOverflow ? wrapper.setAttribute('tabindex', '0') : wrapper.removeAttribute('tabindex');
+        };
+        const ro = new ResizeObserver(() => updateTabindex());
+        ro.observe(wrapper);
+        updateTabindex();
+
+        // CLICK EVENT: Clone table into the shared modal
+        btn.addEventListener('click', () => {
+
+          // Update A11y state immediately
+          btn.setAttribute('aria-expanded', 'true');
+
+          // Increment total open interactions
+          modalOpenCount++;
+
+          // Capture required context metrics
+          const trackingPayload = {
+            pageUrl: window.location.href,
+            openCount: modalOpenCount,
+            tableId: sanitizedId
+          };
+
+          //  Dispatch native custom event to the window object
+          const trackingEvent = new CustomEvent('cntLargeTableModalOpened', {
+            detail: trackingPayload,
+            bubbles: true,
+            cancelable: true
+          });
+
+          window.dispatchEvent(trackingEvent);
+
+          window.dataLayer = window.dataLayer || [];
+          window.dataLayer.push({
+            event: 'cntLargeTableModalOpened',
+            ...trackingPayload
+          });
+
+          const modalContentContainer = modalElement.querySelector('.ecl-modal__body');
+          document.body.classList.add('cnt-table-modal-open');
+
+          // Clean up old content
+          let modalBody = modalContentContainer.querySelector('.ecl-modal__body-scroll');
+          if (modalBody) modalBody.remove();
+
+          modalBody = document.createElement('div');
+          modalBody.className = 'ecl-modal__body-scroll';
+          modalContentContainer.appendChild(modalBody);
+
+          // Clone the table
+          const tableClone = table.cloneNode(true);
+          tableClone.id = `${sanitizedId}--fullscreen`;
+          tableClone.classList.add('cnt-ecl-table-force-fit');
+
+          const clonedCaption = tableClone.querySelector('caption');
+          if (clonedCaption) clonedCaption.remove();
+
+          const eclResponsiveWrapper = document.createElement('div');
+          eclResponsiveWrapper.className = 'ecl-table-container';
+          eclResponsiveWrapper.appendChild(tableClone);
+          modalBody.appendChild(eclResponsiveWrapper);
+
+          const baseFontSize = parseFloat(window.getComputedStyle(tableClone).fontSize) || 16;
+          tableClone.dataset.initialFont = baseFontSize;
+
+          tableClone.querySelectorAll('img').forEach(img => {
+            const startingWidth = img.clientWidth > 0 ? img.clientWidth : (parseInt(img.getAttribute('width')) || 100);
+            img.dataset.originalWidth = startingWidth;
+          });
+
+          // Initialize and Open ECL Modal
+          if (typeof ECL !== 'undefined' && ECL.Modal) {
+            const modalInstance = new ECL.Modal(modalElement);
+            modalInstance.init();
+
+            requestAnimationFrame(() => {
+              modalBody.scrollTop = 0;
+              modalBody.scrollLeft = 0;
+            });
+
+            const openMethod = modalInstance.openModal || modalInstance.open;
+            if (openMethod) {
+              openMethod.call(modalInstance);
+            } else {
+              modalElement.showModal();
+            }
+          }
+        });
+
+        // DOM Injection: Wrap the table
+        table.parentNode.insertBefore(actionWrapper, table);
+        table.parentNode.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+      });
+    }
+  };
+
+  window.addEventListener('cntLargeTableModalOpened', (e) => {
+    if (typeof $wt !== 'undefined' && $wt.analytics && $wt.analytics.isTrackable()) {
+      const pageUrl = e.detail && e.detail.pageUrl ? e.detail.pageUrl : window.location.href;
+      const openCount = e.detail && e.detail.openCount ? e.detail.openCount : 1;
+
+      // Format: "https://your-site.com | Open Count: 1"
+      const trackingLabel = `${pageUrl} | Open Count: ${openCount}`;
+
+      // Format: _paq.push(['trackEvent', Category, Action, Name])
+      _paq.push(['trackEvent', 'CntLargeTableModal', 'Opened', trackingLabel]);
+    }
+  });
+
+  window.addEventListener('cntLargeTableModalClosed', (e) => {
+    if (typeof $wt !== 'undefined' && $wt.analytics && $wt.analytics.isTrackable()) {
+      const pageUrl = e.detail && e.detail.pageUrl ? e.detail.pageUrl : window.location.href;
+
+      // Format: _paq.push(['trackEvent', Category, Action, Name])
+      _paq.push(['trackEvent', 'CntLargeTableModal', 'Closed', pageUrl]);
+    }
+  });
+
+})(Drupal, once);

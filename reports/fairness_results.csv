@@ -1,0 +1,65 @@
+dataset,variant,model,attribute,group,n,approved,selection_rate,n_truly_good,tpr,testable,tpr_gap,reference_group,ratio_vs_best,p_value,verdict
+german,uses_protected,logistic,age_group,25 and over,850,675,0.7941176470588235,612,0.8937908496732027,True,0.0,25 and over,1.0,,reference group
+german,uses_protected,logistic,age_group,under 25,150,94,0.6266666666666667,88,0.7272727272727273,True,0.16651812240047537,25 and over,0.789135802469136,2.128746222044205e-05,FLAG: below 0.8 and significant
+german,uses_protected,logistic,foreign_worker,no,963,733,0.7611630321910696,667,0.8665667166416792,True,0.13343328335832083,no,1.0,,reference group
+german,uses_protected,logistic,foreign_worker,yes,37,36,0.972972972972973,33,1.0,True,0.0,no,1.2782714501677668,0.0010809825757744735,no flag
+german,uses_protected,logistic,personal_status_sex,female non-single OR male single (ambiguous),310,214,0.6903225806451613,201,0.835820895522388,True,0.07213930348258712,male: married/widowed,0.8425317910769452,2.0900574298914498e-05,"review: significant gap, ratio 0.8 to 0.9"
+german,uses_protected,logistic,personal_status_sex,female: single,92,75,0.8152173913043478,67,0.835820895522388,True,0.07213930348258712,male: married/widowed,0.9949646557567541,0.884665977374473,no flag
+german,uses_protected,logistic,personal_status_sex,male: divorced/separated,50,31,0.62,30,0.7333333333333333,True,0.17462686567164187,male: married/widowed,0.7567037861915368,0.002372478140794673,FLAG: below 0.8 and significant
+german,uses_protected,logistic,personal_status_sex,male: married/widowed,548,449,0.8193430656934306,402,0.9079601990049752,True,0.0,male: married/widowed,1.0,,reference group
+german,uses_protected,boosted,age_group,25 and over,850,666,0.7835294117647059,612,0.8823529411764706,True,0.0,25 and over,1.0,,reference group
+german,uses_protected,boosted,age_group,under 25,150,91,0.6066666666666667,88,0.7045454545454546,True,0.17780748663101598,25 and over,0.7742742742742743,1.1421922284150253e-05,FLAG: below 0.8 and significant
+german,uses_protected,boosted,foreign_worker,no,963,723,0.7507788161993769,667,0.8545727136431784,True,0.11512425605379129,no,1.0,,reference group
+german,uses_protected,boosted,foreign_worker,yes,37,34,0.918918918918919,33,0.9696969696969697,True,0.0,no,1.2239542447011327,0.017988397612742957,no flag
+german,uses_protected,boosted,personal_status_sex,female non-single OR male single (ambiguous),310,222,0.7161290322580646,201,0.8507462686567164,True,0.01741293532338306,male: married/widowed,0.9277510867078472,0.07099186562033828,no flag
+german,uses_protected,boosted,personal_status_sex,female: single,92,74,0.8043478260869565,67,0.8656716417910447,True,0.0024875621890547706,male: married/widowed,1.0420392640559153,0.5886158779289177,no flag
+german,uses_protected,boosted,personal_status_sex,male: divorced/separated,50,38,0.76,30,0.8,True,0.06815920398009945,male: married/widowed,0.9845862884160757,0.8608582195532786,no flag
+german,uses_protected,boosted,personal_status_sex,male: married/widowed,548,423,0.7718978102189781,402,0.8681592039800995,True,0.0,male: married/widowed,1.0,,reference group
+german,unaware,logistic,age_group,25 and over,850,676,0.7952941176470588,612,0.8937908496732027,True,0.0,25 and over,1.0,,reference group
+german,unaware,logistic,age_group,under 25,150,99,0.66,88,0.7727272727272727,True,0.12106357694592995,25 and over,0.8298816568047338,0.0004358248300503157,"review: significant gap, ratio 0.8 to 0.9"
+german,unaware,logistic,foreign_worker,no,963,743,0.7715472481827622,667,0.8770614692653673,True,0.03202943982554174,no,1.0,,reference group
+german,unaware,logistic,foreign_worker,yes,37,32,0.8648648648648649,33,0.9090909090909091,True,0.0,no,1.1209486741115275,0.22995982645277208,no flag
+german,unaware,logistic,personal_status_sex,female non-single OR male single (ambiguous),310,233,0.7516129032258064,201,0.8905472636815921,True,0.0,male: married/widowed,0.9623454929152848,0.3527932358219106,no flag
+german,unaware,logistic,personal_status_sex,female: single,92,77,0.8369565217391305,67,0.8656716417910447,True,0.024875621890547372,male: married/widowed,1.0716172287687933,0.26945755234103747,no flag
+german,unaware,logistic,personal_status_sex,male: divorced/separated,50,37,0.74,30,0.8333333333333334,True,0.057213930348258724,male: married/widowed,0.9474766355140186,0.4817084190698364,no flag
+german,unaware,logistic,personal_status_sex,male: married/widowed,548,428,0.781021897810219,402,0.8781094527363185,True,0.01243781094527363,male: married/widowed,1.0,,reference group
+german,unaware,boosted,age_group,25 and over,850,653,0.768235294117647,612,0.8709150326797386,True,0.0,25 and over,1.0,,reference group
+german,unaware,boosted,age_group,under 25,150,102,0.68,88,0.8181818181818182,True,0.052733214497920344,25 and over,0.8851454823889741,0.02351167879327397,"review: significant gap, ratio 0.8 to 0.9"
+german,unaware,boosted,foreign_worker,no,963,723,0.7507788161993769,667,0.8620689655172413,True,0.047021943573667735,no,1.0,,reference group
+german,unaware,boosted,foreign_worker,yes,37,32,0.8648648648648649,33,0.9090909090909091,True,0.0,no,1.1519569361893014,0.12323747996426551,no flag
+german,unaware,boosted,personal_status_sex,female non-single OR male single (ambiguous),310,232,0.7483870967741936,201,0.8756218905472637,True,0.00497512437810943,male: married/widowed,0.9834919161445037,0.679817693517239,no flag
+german,unaware,boosted,personal_status_sex,female: single,92,71,0.7717391304347826,67,0.8805970149253731,True,0.0,male: married/widowed,1.0141799603795223,0.8951032663607863,no flag
+german,unaware,boosted,personal_status_sex,male: divorced/separated,50,35,0.7,30,0.7666666666666667,True,0.1139303482587064,male: married/widowed,0.919904076738609,0.38925336404875466,no flag
+german,unaware,boosted,personal_status_sex,male: married/widowed,548,417,0.7609489051094891,402,0.8631840796019901,True,0.01741293532338306,male: married/widowed,1.0,,reference group
+taiwan,uses_protected,logistic,sex,female,18112,14663,0.8095737632508834,14349,0.8862638511394523,True,0.0,female,1.0,,reference group
+taiwan,uses_protected,logistic,sex,male,11888,8701,0.731914535666218,9015,0.8224070992789795,True,0.0638567518604728,female,0.9040739323458051,7.464872341010959e-56,no flag
+taiwan,uses_protected,logistic,marriage,married,13659,10031,0.7343875832784245,10453,0.823495647182627,True,0.07446353649084236,single,0.8980973938606379,2.1494146972980184e-66,"review: significant gap, ratio 0.8 to 0.9"
+taiwan,uses_protected,logistic,marriage,other,323,230,0.7120743034055728,239,0.7949790794979079,True,0.10298010417556147,single,0.8708100336729403,4.320198424868531e-06,"review: significant gap, ratio 0.8 to 0.9"
+taiwan,uses_protected,logistic,marriage,other (0 is undocumented),54,49,0.9074074074074074,49,0.8979591836734694,True,0.0,single,1.1096868279341086,0.10996737991055693,no flag
+taiwan,uses_protected,logistic,marriage,single,15964,13054,0.8177148584314708,12623,0.8943198922601601,True,0.00363929141330932,single,1.0,,reference group
+taiwan,uses_protected,logistic,age_group,25 and over,27315,21374,0.7825004576240161,21409,0.8626278667849969,True,0.0,25 and over,1.0,,reference group
+taiwan,uses_protected,logistic,age_group,under 25,2685,1990,0.7411545623836127,1955,0.8506393861892583,True,0.011988480595738649,25 and over,0.9471618261209124,1.2256311869657213e-06,no flag
+taiwan,uses_protected,boosted,sex,female,18112,14465,0.7986417844522968,14349,0.8845912607150324,True,0.0,female,1.0,,reference group
+taiwan,uses_protected,boosted,sex,male,11888,8899,0.7485699865410498,9015,0.848585690515807,True,0.036005570199225345,female,0.9373038089340818,2.9426445867675216e-24,no flag
+taiwan,uses_protected,boosted,marriage,married,13659,10453,0.7652829636137345,10453,0.86338850090883,True,0.014162519499333226,single,0.9678346851881214,1.4913454732561838e-07,no flag
+taiwan,uses_protected,boosted,marriage,other,323,241,0.7461300309597523,239,0.8410041841004184,True,0.0365468363077448,single,0.9436124387420965,0.0535641596803003,no flag
+taiwan,uses_protected,boosted,marriage,other (0 is undocumented),54,47,0.8703703703703703,49,0.8775510204081632,True,0.0,single,1.1007361635579966,0.18032674320814168,no flag
+taiwan,uses_protected,boosted,marriage,single,15964,12623,0.7907166123778502,12623,0.8772874910876971,True,0.0002635293204661382,single,1.0,,reference group
+taiwan,uses_protected,boosted,age_group,25 and over,27315,21459,0.7856123009335529,21409,0.8747255826988649,True,0.0,25 and over,1.0,,reference group
+taiwan,uses_protected,boosted,age_group,under 25,2685,1905,0.7094972067039106,1955,0.8265984654731457,True,0.04812711722571916,25 and over,0.9031136679769476,1.4065723742189311e-18,no flag
+taiwan,unaware,logistic,sex,female,18112,14277,0.788261925795053,14349,0.86779566520315,True,0.0,female,1.0,,reference group
+taiwan,unaware,logistic,sex,male,11888,9087,0.7643842530282638,9015,0.8547975596228508,True,0.012998105580299235,female,0.9697084535159988,1.2357883581664864e-06,no flag
+taiwan,unaware,logistic,marriage,married,13659,10626,0.7779486053151768,10453,0.8664498230173157,True,0.0,single,0.9971233669411067,0.6429478810344535,no flag
+taiwan,unaware,logistic,marriage,other,323,242,0.7492260061919505,239,0.8284518828451883,True,0.03799794017212732,single,0.9603086280889842,0.19744054500091357,no flag
+taiwan,unaware,logistic,marriage,other (0 is undocumented),54,41,0.7592592592592593,49,0.7755102040816326,True,0.09093961893568303,single,0.9731685921168057,0.7418460725584632,no flag
+taiwan,unaware,logistic,marriage,single,15964,12455,0.7801929341017289,12623,0.8607304127386517,True,0.005719410278663961,single,1.0,,reference group
+taiwan,unaware,logistic,age_group,25 and over,27315,21495,0.7869302580999451,21409,0.8676257648652436,True,0.0,25 and over,1.0,,reference group
+taiwan,unaware,logistic,age_group,under 25,2685,1869,0.6960893854748603,1955,0.8097186700767264,True,0.05790709478851719,25 and over,0.8845629943822195,1.5125288757617647e-25,"review: significant gap, ratio 0.8 to 0.9"
+taiwan,unaware,boosted,sex,female,18112,14372,0.7935070671378092,14349,0.8790856505679838,True,0.0,female,1.0,,reference group
+taiwan,unaware,boosted,sex,male,11888,8993,0.7564771197846568,9015,0.8547975596228508,True,0.024288090945133067,female,0.9533338153033472,5.235467104555949e-14,no flag
+taiwan,unaware,boosted,marriage,married,13659,10568,0.7737023208141153,10453,0.8699894767052521,True,8.895156061183851e-05,single,0.9873997801164391,0.04168548989310894,no flag
+taiwan,unaware,boosted,marriage,other,323,249,0.7708978328173375,239,0.8661087866108786,True,0.0039696416549852565,single,0.9838206893513451,0.585380209572249,no flag
+taiwan,unaware,boosted,marriage,other (0 is undocumented),54,39,0.7222222222222222,49,0.7346938775510204,True,0.13538455071484345,single,0.9217008198541494,0.31924469707533104,no flag
+taiwan,unaware,boosted,marriage,single,15964,12509,0.7835755449761964,12623,0.8700784282658639,True,0.0,single,1.0,,reference group
+taiwan,unaware,boosted,age_group,25 and over,27315,21482,0.7864543291231924,21409,0.87430519874819,True,0.0,25 and over,1.0,,reference group
+taiwan,unaware,boosted,age_group,under 25,2685,1883,0.7013035381750465,1955,0.8194373401534527,True,0.05486785859473731,25 and over,0.8917282443558047,1.0549333093565566e-22,"review: significant gap, ratio 0.8 to 0.9"

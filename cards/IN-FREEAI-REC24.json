@@ -1,0 +1,29 @@
+{
+  "id": "IN-FREEAI-REC24",
+  "jurisdiction": "IN",
+  "clause": "RBI FREE-AI Committee report (August 2025), Recommendation 24 - AI Audit Framework",
+  "source_url": "https://www.rbi.org.in/",
+  "source_file": [
+    "*FREE*AI*",
+    "*FREEAI*"
+  ],
+  "status": "guidance",
+  "applies_to": [
+    "lending",
+    "governance"
+  ],
+  "effective_from": null,
+  "obligation": "Regulated entities should put in place an AI audit framework covering data inputs, the model, and decision outputs.",
+  "caveat": "Recommendation with a medium-term timeline; guidance, not a binding direction. Closest match to what this tool does.",
+  "test_type": [
+    "governance",
+    "ratio_test",
+    "proxy_test"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "exact RBI URL for the FREE-AI report"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

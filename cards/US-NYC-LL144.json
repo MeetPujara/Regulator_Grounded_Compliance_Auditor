@@ -1,0 +1,28 @@
+{
+  "id": "US-NYC-LL144",
+  "jurisdiction": "US",
+  "clause": "NYC Local Law 144 of 2021 (bias audit); section 2",
+  "source_url": "https://www.nyc.gov/site/dca/about/automated-employment-decision-tools.page",
+  "source_file": [
+    "*144*",
+    "*AEDT*",
+    "*Local*Law*"
+  ],
+  "status": "binding_law",
+  "applies_to": [
+    "employment"
+  ],
+  "effective_from": "2023-01-01",
+  "obligation": "Employers using automated employment decision tools must have a bias audit performed before use.",
+  "caveat": "Hiring law, not lending: our deliberate out-of-scope example. The law text says 'disparate impact'; the impact-ratio detail is in the city's separate rules, which we do not hold. Enforcement began 5 July 2023.",
+  "test_type": [
+    "ratio_test",
+    "governance"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "DCWP final rules text (impact-ratio definition) not held"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

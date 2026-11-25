@@ -1,0 +1,27 @@
+{
+  "id": "US-ECOA-ADVERSE",
+  "jurisdiction": "US",
+  "clause": "15 U.S.C. 1691(d)(2)-(3)",
+  "source_url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title15-section1691",
+  "source_file": [
+    "*1691*",
+    "*ECOA*",
+    "*Scope*of*prohibition*"
+  ],
+  "status": "binding_law",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": null,
+  "obligation": "An applicant who is denied credit is entitled to a statement of reasons, which satisfies the law only if it states the specific reasons.",
+  "caveat": "Statutory basis for the detailed rule in Regulation B 12 CFR 1002.9.",
+  "test_type": [
+    "explanation_faithfulness"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "effective date (enacted 1974-10-28)"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

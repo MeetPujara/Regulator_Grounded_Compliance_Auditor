@@ -1,0 +1,60 @@
+/* DAE-4831 - table wrapper */
+.cnt-table-action-wrapper {
+  display: none;
+  /* Hidden on Mobile (< 996px) */
+}
+
+/* Large (≥ 996px) */
+@media screen and (min-width: 996px) {
+  /* Your CSS for large screens and above goes here */
+  .cnt-ecl-table-scroll-container {
+    max-height: 500px;
+    overflow-y: auto;
+  }
+
+  .cnt-table-action-wrapper {
+    display: flex;
+    /* Visible on Desktop */
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  .cnt-table-fullscreen-modal .ecl-modal__content {
+    max-width: 95% !important;
+    /* Force it to 95% of the viewport width */
+    width: 95% !important;
+    max-height: 95vh !important;
+    /* Force it to 95vh of the viewport height */
+    height: 95vh !important;
+  }
+
+  .cnt-table-fullscreen-modal .ecl-modal__container {
+    margin: 0 !important;
+  }
+
+  /* Prevents scrolling when modal is active */
+  body.cnt-table-modal-open {
+    overflow: hidden;
+    /* Optional: prevents layout shift if you have a scrollbar */
+    padding-right: var(--scrollbar-width, 0px);
+  }
+}
+
+.cnt-ecl-table-force-fit {
+  table-layout: auto;
+  width: 100%;
+}
+
+.cnt-ecl-table-force-fit th,
+.cnt-ecl-table-force-fit td {
+  white-space: normal !important;
+  white-space: break-word !important;
+}
+
+@media screen and (min-width: 996px) and (max-width: 1366px) {
+  .cnt-ecl-table-force-fit th,
+  .cnt-ecl-table-force-fit td {
+    overflow-wrap: anywhere !important;   /* Force-breaks text blocks to prevent spill over */
+    max-width: 250px !important;         /* Caps columns so they cannot grow too wide and push others out */
+  }
+}

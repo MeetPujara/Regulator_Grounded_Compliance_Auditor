@@ -1,0 +1,20 @@
+{
+  "notice": "SYNTHETIC planted bias. Not real Indian applicant data.",
+  "seed_columns": 42,
+  "seed_plant": 43,
+  "target_zone": "SYN_PIN_1",
+  "reference_zone": "SYN_PIN_2",
+  "target_group": "SYN_GROUP_B",
+  "reference_group": "SYN_GROUP_A",
+  "plant_rates": {
+    "zone_only": 0.3,
+    "group_only": 0.15,
+    "both_extra": 0.2
+  },
+  "rows_changed": 100,
+  "changed_in_target_zone": 69,
+  "changed_in_target_group": 79,
+  "changed_in_both": 48,
+  "approval_rate_before": 0.7,
+  "approval_rate_after": 0.6
+}

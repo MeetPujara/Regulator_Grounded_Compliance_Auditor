@@ -1,0 +1,32 @@
+{
+  "id": "IN-DPDP-RULES-13-3",
+  "jurisdiction": "IN",
+  "clause": "DPDP Rules 2025 (G.S.R. 846(E), 13 November 2025), Rule 13(3)",
+  "source_url": "https://www.meity.gov.in/data-protection-framework",
+  "source_file": [
+    "*DPDP*Rule*",
+    "*846*",
+    "*DPDP*"
+  ],
+  "status": "regulation",
+  "applies_to": [
+    "lending",
+    "governance",
+    "data_quality"
+  ],
+  "effective_from": "2027-05-13",
+  "obligation": "A Significant Data Fiduciary must verify that the algorithmic software it uses for processing personal data is unlikely to pose a risk to the rights of data principals.",
+  "caveat": "Applies only to entities notified as Significant Data Fiduciaries. Start date is derived (18 months after Gazette publication), not stated as a calendar date. Rules 1, 2 and 17-21 started 13 Nov 2025; Rule 4 starts 13 Nov 2026.",
+  "test_type": [
+    "governance",
+    "ratio_test",
+    "proxy_test"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "whether the lender is notified as a Significant Data Fiduciary",
+    "exact commencement date derived from the Gazette"
+  ],
+  "applicability_uncertain": true,
+  "retrieved_on": "2026-11-24"
+}

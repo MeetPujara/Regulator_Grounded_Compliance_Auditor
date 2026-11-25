@@ -1,0 +1,96 @@
+/*
+ * external-links.js — one rule for every off-site link in the Explorer.
+ *
+ * Any link that resolves to a different origin than the current page is:
+ *   1. forced to open in a new tab (target=_blank + rel=noopener noreferrer),
+ *      so the reader never loses their place in the explorer; and
+ *   2. flagged with the `x-ext` class, which the global `a.x-ext::after` rule in
+ *      global.css decorates with a small outbound-arrow icon.
+ *
+ * It runs on every page and watches for DOM added later (peek trays, comparison
+ * modal, search results, async CoP content), so we never hand-edit hyperlinks.
+ *
+ * Assistant-ui (chatbot) anchors are ceded to React — markdown-text.tsx applies
+ * the exact same rule to the assistant's own links — so this observer skips
+ * anything inside `.aui-root` to avoid fighting React's reconciliation.
+ */
+(function () {
+  "use strict";
+
+  var ICON_CLASS = "x-ext";
+
+  function isExternal(a) {
+    if (!a.getAttribute("href")) return false;
+    // Only real web navigations count — leave mailto:, tel:, javascript: alone.
+    if (a.protocol !== "http:" && a.protocol !== "https:") return false;
+    return a.origin !== location.origin;
+  }
+
+  // Skip the icon when the link already carries its own glyph (PDF buttons,
+  // "Open as page" chips, etc.) so we don't stack two icons.
+  function hasOwnIcon(a) {
+    return !!a.querySelector('i[class*="fa-"], img, svg');
+  }
+
+  function process(a) {
+    if (a.dataset.extDone) return;
+    a.dataset.extDone = "1";
+
+    // Assistant-ui handles its own anchors in React.
+    if (a.closest(".aui-root")) return;
+    // The global site nav mirrors the WordPress parent's menu: those links are
+    // site chrome, not content, and must navigate in place with no outbound
+    // icon — same as they behave on the parent site.
+    if (a.closest(".global-nav")) return;
+    if (!isExternal(a)) return;
+
+    a.target = "_blank";
+    var rel = (a.getAttribute("rel") || "").split(/\s+/).filter(Boolean);
+    if (rel.indexOf("noopener") === -1) rel.push("noopener");
+    if (rel.indexOf("noreferrer") === -1) rel.push("noreferrer");
+    a.setAttribute("rel", rel.join(" "));
+
+    // ai-act-xref links open the in-page peek tray, not a new page — never
+    // decorate them (they're same-origin anyway, so this is belt-and-braces).
+    if (a.classList.contains("ai-act-xref")) return;
+    if (!hasOwnIcon(a)) a.classList.add(ICON_CLASS);
+  }
+
+  function scan(root) {
+    if (!root || root.nodeType !== 1) return;
+    if (root.matches && root.matches("a[href]")) process(root);
+    if (!root.querySelectorAll) return;
+    var links = root.querySelectorAll("a[href]");
+    for (var i = 0; i < links.length; i++) process(links[i]);
+  }
+
+  // The initial pass over a pre-rendered explorer page touches ~2,700 anchors
+  // (isExternal reads a.origin, which parses the href) — one ~60 ms task on a
+  // 4x-throttled desktop core and several hundred ms on PageSpeed's mobile
+  // hosts, all of it inside the Total Blocking Time window. Process the links
+  // in ~8 ms slices with a macrotask between them instead (Lighthouse scales
+  // observed tasks by 4 for mobile, so 8 ms real is ~32 ms there); the icons
+  // still land within a frame or two of DOMContentLoaded, and links added
+  // later go through the observer below as before.
+  function scanInSlices(links, i) {
+    var start = performance.now();
+    while (i < links.length && performance.now() - start < 8) process(links[i++]);
+    if (i < links.length) setTimeout(function () { scanInSlices(links, i); }, 0);
+  }
+
+  function init() {
+    scanInSlices(document.body.querySelectorAll("a[href]"), 0);
+    new MutationObserver(function (mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var added = mutations[i].addedNodes;
+        for (var j = 0; j < added.length; j++) scan(added[j]);
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();

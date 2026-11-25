@@ -1,0 +1,27 @@
+{
+  "id": "US-REGB-ADVERSE",
+  "jurisdiction": "US",
+  "clause": "12 CFR 1002.9(a)(2), (b)(2); Official Interpretations 9(b)(2)-1 to -4",
+  "source_url": "https://www.consumerfinance.gov/rules-policy/regulations/1002/9/",
+  "source_file": [
+    "*1002.9*",
+    "*Notifications*"
+  ],
+  "status": "regulation",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": null,
+  "obligation": "Adverse-action reasons must be specific, state the principal reasons, and accurately describe the factors actually considered or scored.",
+  "caveat": "Generic reasons such as 'did not meet internal standards' are insufficient. FCRA credit-score key factors do not replace these reasons. More than four reasons is unlikely to help. Notification is due within 30 days of a completed application.",
+  "test_type": [
+    "explanation_faithfulness"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "effective date not stated on the page",
+    "whether the 2026 disparate-impact amendment changed this section"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

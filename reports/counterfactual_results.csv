@@ -1,0 +1,45 @@
+dataset,variant,model,flip,column,n_rejected_eligible,n_flips,flip_rate,mean_prob_change
+german,uses_protected,logistic,foreign worker: yes -> no,foreign_worker,1,0,0.0,-0.19760751989857878
+german,uses_protected,logistic,foreign worker: no -> yes,foreign_worker,230,165,0.717391304347826,0.24699835930626948
+german,uses_protected,logistic,status: divorced/sep male -> married/widowed male,personal_status_sex,19,11,0.5789473684210527,0.17110285899972877
+german,uses_protected,logistic,status: married/widowed male -> divorced/sep male,personal_status_sex,99,0,0.0,-0.13156733743843102
+german,uses_protected,logistic,status: ambiguous group -> female single (AMBIGUOUS),personal_status_sex,96,11,0.11458333333333333,0.02643714918515061
+german,uses_protected,logistic,status: female single -> ambiguous group (AMBIGUOUS),personal_status_sex,17,0,0.0,0.005012574570862477
+german,uses_protected,logistic,age: under 25 -> 25,age,56,0,0.0,0.0058165665595040555
+german,uses_protected,boosted,foreign worker: yes -> no,foreign_worker,3,0,0.0,-0.08978025426408938
+german,uses_protected,boosted,foreign worker: no -> yes,foreign_worker,240,82,0.3416666666666667,0.15871770650225117
+german,uses_protected,boosted,status: divorced/sep male -> married/widowed male,personal_status_sex,12,2,0.16666666666666666,0.08041009664624306
+german,uses_protected,boosted,status: married/widowed male -> divorced/sep male,personal_status_sex,125,3,0.024,-0.02463956347998318
+german,uses_protected,boosted,status: ambiguous group -> female single (AMBIGUOUS),personal_status_sex,88,11,0.125,0.03210055393761664
+german,uses_protected,boosted,status: female single -> ambiguous group (AMBIGUOUS),personal_status_sex,18,1,0.05555555555555555,0.00012128029774144245
+german,uses_protected,boosted,age: under 25 -> 25,age,59,3,0.05084745762711865,0.004746825368156412
+german,unaware,logistic,foreign worker: yes -> no,foreign_worker,5,0,0.0,1.1102230246251566e-17
+german,unaware,logistic,foreign worker: no -> yes,foreign_worker,220,0,0.0,-1.0723745124220262e-18
+german,unaware,logistic,status: divorced/sep male -> married/widowed male,personal_status_sex,13,0,0.0,-8.540177112501205e-18
+german,unaware,logistic,status: married/widowed male -> divorced/sep male,personal_status_sex,120,0,0.0,0.0
+german,unaware,logistic,status: ambiguous group -> female single (AMBIGUOUS),personal_status_sex,77,0,0.0,-2.8836961678575496e-18
+german,unaware,logistic,status: female single -> ambiguous group (AMBIGUOUS),personal_status_sex,15,0,0.0,-7.401486830834377e-18
+german,unaware,logistic,age: under 25 -> 25,age,51,0,0.0,-5.442269728554689e-19
+german,unaware,boosted,foreign worker: yes -> no,foreign_worker,5,0,0.0,0.0
+german,unaware,boosted,foreign worker: no -> yes,foreign_worker,240,0,0.0,0.0
+german,unaware,boosted,status: divorced/sep male -> married/widowed male,personal_status_sex,15,0,0.0,0.0
+german,unaware,boosted,status: married/widowed male -> divorced/sep male,personal_status_sex,131,0,0.0,0.0
+german,unaware,boosted,status: ambiguous group -> female single (AMBIGUOUS),personal_status_sex,78,0,0.0,0.0
+german,unaware,boosted,status: female single -> ambiguous group (AMBIGUOUS),personal_status_sex,21,0,0.0,0.0
+german,unaware,boosted,age: under 25 -> 25,age,48,0,0.0,0.0
+taiwan,uses_protected,logistic,sex: male -> female,SEX,3187,572,0.17947913398180107,0.02517385037761109
+taiwan,uses_protected,logistic,sex: female -> male,SEX,3449,0,0.0,-0.02597497050268536
+taiwan,uses_protected,logistic,marriage: married -> single,MARRIAGE,3628,1022,0.2816979051819184,0.04193523033544771
+taiwan,uses_protected,logistic,marriage: single -> married,MARRIAGE,2910,0,0.0,-0.043887142947109
+taiwan,uses_protected,boosted,sex: male -> female,SEX,2989,166,0.05553696888591502,0.011135253512963498
+taiwan,uses_protected,boosted,sex: female -> male,SEX,3647,16,0.004387167534960241,-0.009805352660611716
+taiwan,uses_protected,boosted,marriage: married -> single,MARRIAGE,3206,192,0.05988771054273238,0.016560070113130806
+taiwan,uses_protected,boosted,marriage: single -> married,MARRIAGE,3341,36,0.010775217000897935,-0.01604111710600806
+taiwan,unaware,logistic,sex: male -> female,SEX,2801,0,0.0,5.945499953365708e-20
+taiwan,unaware,logistic,sex: female -> male,SEX,3835,0,0.0,1.4474876461866447e-20
+taiwan,unaware,logistic,marriage: married -> single,MARRIAGE,3033,0,0.0,0.0
+taiwan,unaware,logistic,marriage: single -> married,MARRIAGE,3509,0,0.0,1.5819649823669943e-20
+taiwan,unaware,boosted,sex: male -> female,SEX,2895,0,0.0,0.0
+taiwan,unaware,boosted,sex: female -> male,SEX,3740,0,0.0,0.0
+taiwan,unaware,boosted,marriage: married -> single,MARRIAGE,3091,0,0.0,0.0
+taiwan,unaware,boosted,marriage: single -> married,MARRIAGE,3455,0,0.0,0.0

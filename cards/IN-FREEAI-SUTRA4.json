@@ -1,0 +1,29 @@
+{
+  "id": "IN-FREEAI-SUTRA4",
+  "jurisdiction": "IN",
+  "clause": "RBI FREE-AI Committee report (August 2025), Sutra 4 - Fairness and Equity",
+  "source_url": "https://www.rbi.org.in/",
+  "source_file": [
+    "*FREE*AI*",
+    "*FREEAI*"
+  ],
+  "status": "guidance",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": null,
+  "obligation": "Regulated entities should ensure their AI systems treat customers fairly and equitably.",
+  "caveat": "Committee report, not binding law. Addressed to regulated entities with medium-term timelines.",
+  "test_type": [
+    "ratio_test",
+    "counterfactual",
+    "governance"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "exact RBI URL for the FREE-AI report",
+    "whether RBI has made any FREE-AI recommendation binding"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

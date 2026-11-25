@@ -1,0 +1,25 @@
+{
+  "id": "EU-AIA-ANNEX3-5B",
+  "jurisdiction": "EU",
+  "clause": "Regulation (EU) 2024/1689, Annex III, point 5(b)",
+  "source_url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+  "source_file": [
+    "*2024_1689*",
+    "*2024*1689*"
+  ],
+  "status": "binding_law",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": "2027-12-02",
+  "obligation": "AI systems used to evaluate the creditworthiness of natural persons or to establish their credit score are classified as high-risk, except when used to detect financial fraud.",
+  "caveat": "Application date set by the Digital Omnibus, Regulation (EU) 2026/1744; the original 2024 text shows an earlier date. Fraud detection is excluded.",
+  "test_type": [
+    "high_risk_classification",
+    "governance"
+  ],
+  "threshold": null,
+  "to_verify": [],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

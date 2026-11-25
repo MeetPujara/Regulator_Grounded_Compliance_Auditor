@@ -1,0 +1,2688 @@
+
+// =============================================================================
+// shared.js — EU AI Act Explorer: shared UI library
+// =============================================================================
+//
+// Loaded by the explorer pages, the object pages and single.html.
+// NOT loaded by cop-*.html pages (which load cop.js instead).
+//
+// This file no longer renders anything. src/lib/renderer.ts is the single
+// rendering implementation; renderText(), renderItems(), renderRecitals(),
+// renderFootnotes() and buildTOC() here are one-line calls into it via
+// window.__renderPipeline (see buildRenderState below). Rendering changes go in
+// src/lib/renderer.ts — putting one here would recreate the fork that took
+// three files and two silent correctness bugs to undo.
+//
+// What lives here is the interaction layer:
+//   • Render state ownership: buildRenderState() and the aliases onto it
+//   • Peek tray (same-document + cross-document AI Act peek)
+//   • Table of contents behaviour: highlighting, rebuilds, mobile drawer
+//   • Search (header search modal + sidebar search)
+//   • Guided pathways / playlist panel
+//   • Mobile UI (TOC drawer, footnote float, tap menus, paragraph sheet)
+//   • Back-to-overview button, feedback toast, nav dropdowns
+//   • URL helpers shared with index-page.js / single-page.js (itemUrl,
+//     objectUrlForAnchor, langPrefix, esc, …)
+//
+// Initialization order:
+//   loadDocConfig() → loadAndRender(lang) [index-page.js]
+//                       → buildRenderState() → the pipeline module
+//                       → renderDocument() / buildTOC()
+//   DOMContentLoaded listeners: initNavDropdowns, initFeedbackToast,
+//                               initCrossDocPeek, initBackToOverview,
+//                               initParaSheet
+//
+// SYNC REQUIREMENT:
+//   IMPL_ACTS_DOCS, buildDocSwitcherHtml() and the header nav dropdown
+//   (_positionDropdownMenu and friends) are duplicated in cop.js.
+//   Any change must be mirrored in both files.
+// =============================================================================
+
+  // ── Safe closest() — guards against non-Element event targets (text nodes, SVG) ──
+  function _cl(target, sel) {
+    return target && typeof target.closest === 'function' ? target.closest(sel) : null;
+  }
+
+  // ── Mobile TOC drawer ─────────────────────────────────────────────────────
+  function initMobileTocFab() {
+    if (document.getElementById('tocFab')) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'toc-overlay';
+    overlay.id = 'tocOverlay';
+    overlay.addEventListener('click', closeTocDrawer);
+    document.body.appendChild(overlay);
+    const fab = document.createElement('button');
+    fab.className = 'toc-fab';
+    fab.id = 'tocFab';
+    fab.setAttribute('aria-label', 'Table of contents');
+    fab.innerHTML = '<i class="fas fa-bars"></i>';
+    fab.addEventListener('click', toggleTocDrawer);
+    document.body.appendChild(fab);
+  }
+  function toggleTocDrawer() {
+    const toc = document.getElementById('toc');
+    const overlay = document.getElementById('tocOverlay');
+    const fab = document.getElementById('tocFab');
+    if (!toc) return;
+    const isOpen = toc.classList.contains('toc-open');
+    toc.classList.toggle('toc-open', !isOpen);
+    overlay.classList.toggle('toc-open', !isOpen);
+    fab.innerHTML = isOpen ? '<i class="fas fa-bars"></i>' : '<i class="fas fa-times"></i>';
+    document.body.classList.toggle('toc-is-open', !isOpen);
+  }
+  function closeTocDrawer() {
+    document.getElementById('toc')?.classList.remove('toc-open');
+    document.getElementById('tocOverlay')?.classList.remove('toc-open');
+    const fab = document.getElementById('tocFab');
+    if (fab) fab.innerHTML = '<i class="fas fa-bars"></i>';
+    document.body.classList.remove('toc-is-open');
+  }
+
+  // ── Footnote float tooltip (position: fixed, escapes .document overflow) ────
+  function initFnTipFloat() {
+    if (document.getElementById('fnTipFloat')) return;
+    const el = document.createElement('div');
+    el.id = 'fnTipFloat';
+    el.className = 'fn-tip-float';
+    document.body.appendChild(el);
+  }
+
+  function showFnTipFloat(fnRef) {
+    const float = document.getElementById('fnTipFloat');
+    if (!float) return;
+    const m = (fnRef.id || '').match(/^fnref-(\d+)/);
+    if (!m) return;
+    const rawText = fnMap[+m[1]];
+    if (!rawText) return;
+    // Strip markdown hyperlinks [text](url) → just text for plain tooltip display
+    const text = rawText.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+    float.textContent = text;
+    const rect = fnRef.getBoundingClientRect();
+    const tipW = Math.min(340, window.innerWidth - 16);
+    let left = rect.left - 8;
+    if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+    if (left < 8) left = 8;
+    float.style.cssText =
+      `display:block;width:${tipW}px;left:${left}px;` +
+      `bottom:${window.innerHeight - rect.top + 6}px;top:auto;`;
+  }
+
+  function hideFnTipFloat() {
+    const float = document.getElementById('fnTipFloat');
+    if (float) float.style.display = 'none';
+  }
+
+  // ── Tooltip smart positioning (term-tips) ───────────────────────────────────
+  // Tips are position:absolute anchored to .term-ref. CSS default places them
+  // above-and-left of the trigger; JS toggles flip classes when that default
+  // would overflow the viewport. We measure the tip's actual rect in the
+  // unflipped state — that's the only reliable signal for wrapping inline
+  // triggers, whose first-inline-box origin can sit far from the cursor.
+  function smartPositionTip(trigger, tip, event) {
+    if (!tip) return;
+    const margin = 16;
+    // Find the nearest overflow:hidden ancestor — that's the real clipping
+    // boundary, not the viewport. .layout clips the main document area;
+    // .peek-tray-body clips inside the peek tray.
+    const clipParent = trigger.closest('.layout, .peek-tray-body');
+    const clipRect = clipParent ? clipParent.getBoundingClientRect() : null;
+    const rightBound = clipRect ? Math.min(clipRect.right, window.innerWidth) : window.innerWidth;
+    const leftBound  = clipRect ? Math.max(clipRect.left, 0) : 0;
+    const topBound   = clipRect ? Math.max(clipRect.top, 0) : 0;
+    tip.style.transform = '';
+    tip.style.width = '';
+    // Measure tip in its no-flip state
+    tip.classList.remove('tip-h-flip');
+    const rH = tip.getBoundingClientRect();
+    if (rH.right > rightBound - margin) tip.classList.add('tip-h-flip');
+    tip.classList.remove('tip-v-flip');
+    const rV = tip.getBoundingClientRect();
+    if (rV.top < topBound + margin) tip.classList.add('tip-v-flip');
+    // Neither anchor (left-aligned default, or right-aligned tip-h-flip) is
+    // guaranteed to fit a container narrower than the tip itself — the peek
+    // tray on mobile can be. Both edges get the same clearance: an earlier
+    // version left the right side at the base 16px margin and it clamped
+    // flush against .peek-tray-body's own right inset.
+    const clampMargin = margin + 12;
+    // A translateX nudge alone can only satisfy one edge — if the tip is
+    // wider than the space between both clamped edges, shrink it first so a
+    // single nudge can then satisfy both.
+    const availableWidth = rightBound - leftBound - clampMargin * 2;
+    if (availableWidth > 0 && tip.getBoundingClientRect().width > availableWidth) {
+      tip.style.width = `${availableWidth}px`;
+    }
+    const rFinal = tip.getBoundingClientRect();
+    if (rFinal.left < leftBound + clampMargin) {
+      tip.style.transform = `translateX(${leftBound + clampMargin - rFinal.left}px)`;
+    } else if (rFinal.right > rightBound - clampMargin) {
+      tip.style.transform = `translateX(${rightBound - clampMargin - rFinal.right}px)`;
+    }
+  }
+
+  function initTooltipPositioning() {
+    initFnTipFloat();
+    // fn-tips: use fixed float so .document overflow-x:auto cannot clip them
+    document.addEventListener('mouseover', e => {
+      const fnRef = _cl(e.target,'sup.fnref');
+      if (fnRef) showFnTipFloat(fnRef);
+    });
+    document.addEventListener('mouseout', e => {
+      const fnRef = _cl(e.target,'sup.fnref');
+      if (fnRef && !fnRef.contains(e.relatedTarget)) hideFnTipFloat();
+    });
+    // term-tips: viewport-aware positioning. Uses mouseover (not mouseenter)
+    // because iOS Safari only fires mouseover for tap-induced hover simulation.
+    document.addEventListener('mouseover', e => {
+      const termRef = _cl(e.target, '.term-ref');
+      if (termRef) smartPositionTip(termRef, termRef.querySelector('.term-tip'), e);
+    });
+  }
+
+  initTooltipPositioning();
+
+  // ── Copy URL helper ──────────────────────────────────────────────────────────
+  function copyItemUrl(btn, url) {
+    navigator.clipboard.writeText(url).then(() => {
+      btn.classList.add('copied');
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-check"></i>';
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 1400);
+    }).catch(() => {});
+  }
+
+  
+
+  // ── "Ask the assistant" button ───────────────────────────────────────────────
+  // Attaches the provision the reader is looking at to the chat composer, so
+  // their next message carries a reference to it. Only the reference travels
+  // (localized label + the same canonical URL the copy-link button yields) —
+  // CLaiRK already indexes the Act's full text, and pasting a whole article
+  // alongside the question competes with its own retrieval.
+  //
+  // Rendered for the AI Act only: the assistant is scoped to the Act, so
+  // offering it on the Scientific Panel would promise an answer it can't ground.
+  
+
+  // "1.a" → "(1)(a)", so a paragraph reference reads "Article 6(1)(a)".
+  // Segments that carry no label in the rendered text — "0" section headers and
+  // leading-zero body paragraphs — are dropped here too, matching trailingLabel().
+  
+
+  // Reference label for a paragraph, e.g. "Article 6(1)(a)". Falls back to the
+  // untranslated type when a language file is missing the localized label.
+  
+
+  // Delegated so it covers every render path — main document, peek trays, and
+  // any content injected after load. The React chat widget listens for this.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('.ask-ai-btn');
+    if (!btn) return;
+    window.dispatchEvent(new CustomEvent('aiact:ask-about', {
+      detail: { label: btn.dataset.askLabel || '', url: btn.dataset.askUrl || '' },
+    }));
+    // The chat opens at the bottom of the viewport, potentially far from the
+    // button — flash it so the click is visibly acknowledged where it happened.
+    btn.classList.add('attached');
+    setTimeout(() => btn.classList.remove('attached'), 1400);
+  });
+
+  // ── The rendering pipeline ───────────────────────────────────────────────
+  // src/lib/renderer.ts, bundled by Astro as src/scripts/render-pipeline.ts and
+  // handed over on window because this file is a classic script and cannot
+  // import. That module is deferred, so it runs after this one: the promise is
+  // created here and resolved there, rather than trusting that whatever needs
+  // the pipeline happens to run late enough. Pages that never open a peek — the
+  // object pages — do not load the module at all, and nothing awaits this.
+  //
+  // The timeout is not belt-and-braces, it is the whole point. A promise only
+  // ever RESOLVED by the module has no failure path: when the module throws
+  // during evaluation it never publishes, this stays PENDING rather than
+  // rejecting, and the page looks perfect because the static HTML is already
+  // in the document — while RS stays null and every client feature is dead.
+  // That is exactly how a stray process.env in site-variables.ts presented: no
+  // error, no rejection, and the first visible symptom was "Cannot read
+  // properties of null (reading 'renderContext')" from openPeekTray, nowhere
+  // near the cause. Rejecting turns that into one accurate message, and
+  // loadAndRender()'s catch already renders it where the reader can see it.
+  const PIPELINE_TIMEOUT_MS = 10000;
+  let _pipelineReady = null;
+  function renderPipeline() {
+    if (window.__renderPipeline) return Promise.resolve(window.__renderPipeline);
+    // Created on first use, not at load: the object pages never call this and
+    // must not be left holding a promise that rejects into their console.
+    _pipelineReady ??= new Promise((resolve, reject) => {
+      window.__onRenderPipeline = resolve;
+      setTimeout(() => {
+        if (window.__renderPipeline) return resolve(window.__renderPipeline);
+        reject(new Error(
+          'The rendering pipeline did not load. src/scripts/render-pipeline.ts ' +
+          'never set window.__renderPipeline — it most likely threw while ' +
+          'evaluating. Check the console for the first error on this page, and ' +
+          'that everything it imports is browser-safe (no process.env, no ' +
+          'node: built-ins).'
+        ));
+      }, PIPELINE_TIMEOUT_MS);
+    });
+    return _pipelineReady;
+  }
+
+  // Language-aware URL prefix: /en, /fr, /de, etc.
+
+  // The live render state. Built by buildRenderState() from the pipeline module,
+  // which is src/lib/renderer.ts — the same code that renders every static page.
+  //
+  // The module-level variables below it (titleMap, localizedLabel, linkPatterns,
+  // …) are ALIASES onto this object's fields, not copies. index-page.js,
+  // single-page.js and the search scripts all read them directly, so they cannot
+  // simply be removed; pointing them at the state's own objects keeps every one
+  // of those readers working while there is only one source of the data.
+  //
+  // Aliasing is safe only for fields the renderer mutates rather than reassigns.
+  // renderContext and fnRefCounter ARE reassigned mid-render, so they are not
+  // aliased — read and write RS.renderContext / RS.fnRefCounter directly.
+  let RS = null;
+
+  async function buildRenderState(docId, lang) {
+    const pipeline = await renderPipeline();
+    RS = await pipeline.loadRenderState(docId, lang);
+
+    currentLang    = RS.lang;
+    DOC_CONFIG     = RS.docConfig;
+    STRUCTURE      = RS.structure;
+    titleMap       = RS.titleMap;
+    shortTitleMap  = RS.shortTitleMap;
+    localizedLabel = RS.localizedLabel;
+    linkPatterns   = RS.linkPatterns;
+    termDefs       = RS.termDefs;
+    ctxTips        = RS.ctxTips;
+    fnMap          = RS.fnMap;
+    uiStr          = RS.uiStr;
+    structureTitles = RS.structureTitles;
+    articleMeta    = RS.articleMeta;
+    paraMeta       = RS.paraMeta;
+    recitalRefs    = RS.recitalRefs;
+    omnibusMap     = RS.omnibusMap;
+    omnibusTitles  = RS.omnibusTitles;
+    omnibusOldTitles = RS.omnibusOldTitles;
+    omnibusShortTitles = RS.omnibusShortTitles;
+    return RS;
+  }
+
+  // The object-page URL scheme lives in src/lib/urls.ts and reaches this file
+  // through window.__aiactUtils, so the permalink shapes that carry the site's
+  // search rankings have exactly one definition. Only the ORIGIN differs
+  // between here and the build, and deliberately: the build has no location and
+  // bakes SITE_URL, while a link copied here should work on whatever host the
+  // reader is actually on. That policy stays in itemUrl()/anchorUrl() below.
+  function _urlCtx() {
+    return { docId: DOC_ID, lang: currentLang.toUpperCase(), structure: STRUCTURE };
+  }
+  function langPrefix() { return window.__aiactUtils.langPrefix(_urlCtx()); }
+  function explorerPath() { return window.__aiactUtils.explorerPagePath(_urlCtx()); }
+
+  // Static explorer pages for the other documents live under the explorer
+  // prefix: /ai-act-explorer/digital-omnibus/ etc. (keep in sync with the
+  // src/pages routes and cop.js's doc switcher).
+  const DOC_SLUGS = { digital_omnibus: 'digital-omnibus', scientific_panel: 'scientific-panel' };
+
+  // Path segment for the current document's static explorer page
+  // ("/digital-omnibus"), or '' on the AI Act and on legacy ?doc= views —
+  // those stay query-addressed so their URLs don't change under the reader.
+  function docSubpath() {
+    return (window.__DOC_ID && DOC_ID !== 'ai_act' && DOC_SLUGS[DOC_ID])
+      ? '/' + DOC_SLUGS[DOC_ID] : '';
+  }
+
+  // Base for the per-provision object pages (/article/38/ etc.). Only the AI
+  // Act has object pages; for other documents this returns null and links fall
+  // back to in-page anchors / the single view.
+  function objBase() { return window.__aiactUtils.objBase(_urlCtx()); }
+
+  function chapterArabic(roman) {
+    return window.__aiactUtils.chapterArabic(_urlCtx(), roman);
+  }
+
+  // Map an in-document anchor ("article-6", "p-article-6-1.a", "chapter-III",
+  // "section-III-1", "recital-47") to its object-page URL, or null when the
+  // document has no object pages. Chapter/section URLs are arabic, like the
+  // legacy WordPress permalinks. Mirrors src/lib/renderer.ts objectUrlForAnchor.
+  function objectUrlForAnchor(anchor) {
+    return window.__aiactUtils.objectUrlForAnchor(_urlCtx(), anchor);
+  }
+
+  // In-text cross-reference target: object page for the AI Act, in-page anchor
+  // for documents without object pages. ("Object pages, not scrolling.")
+  
+
+  function itemUrl(type, num) {
+    const obj = objectUrlForAnchor(`${type}-${num}`);
+    if (obj) return new URL(obj, location.href).href;
+    return new URL(`${langPrefix()}/single?type=${type}&num=${num}${docParam}`, location.href).href;
+  }
+
+  // Both branches are already absolute paths, so location.origin is all that is
+  // needed. Resolving through `new URL()` instead percent-encodes the fragment,
+  // which for BG and EL turns a Cyrillic/Greek paragraph id into "%D0%B1" — a
+  // different string from the one src/lib/renderer.ts bakes into the static
+  // page, so the same anchor had two spellings depending on whether the reader
+  // arrived on the pre-rendered page or re-rendered it by switching language.
+  
+
+  // Flash an element briefly to draw attention (anchor navigation).
+  // Uses IntersectionObserver so the flash fires only when the element
+  // actually arrives in the viewport — reliable regardless of scroll distance.
+  // Same IntersectionObserver + anchor-flash pattern as window._search.flashEl in search.js.
+  // This copy lives here because shared.js pages don't load search.js, and it resolves the
+  // flash target to the item heading first (article wrappers are passed, not headings directly).
+  function flashEl(el) {
+    if (!el) return;
+    const flashTarget = el.querySelector(':scope > .item-heading') ||
+                        el.querySelector(':scope > .recital-header') ||
+                        el;
+    flashTarget.classList.remove('anchor-flash');
+    void flashTarget.offsetWidth;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) {
+        flashTarget.classList.add('anchor-flash');
+        flashTarget.addEventListener('animationend', () => flashTarget.classList.remove('anchor-flash'), { once: true });
+        observer.disconnect();
+      }
+    }, { rootMargin: '0px', threshold: 0.1 });
+    observer.observe(flashTarget);
+    setTimeout(() => observer.disconnect(), 4000);
+  }
+
+  // Scroll `container` so `el` comes to rest `offset` px below its top edge.
+  //
+  // The explorer's provisions and recitals carry `content-visibility: auto`
+  // (index-page.css), so every off-screen block contributes its
+  // `contain-intrinsic-size` estimate instead of its real height. Three
+  // consequences, all handled here:
+  //
+  //   • A smooth animation aims at a position derived from those estimates and
+  //     then loses it as the blocks it passes are laid out for real. Jumping to
+  //     a high recital landed tens of thousands of pixels short — 20-40
+  //     recitals early. Long hops therefore go instantly; short ones, where the
+  //     estimate error is negligible, still animate.
+  //   • Even an instant jump shifts the target a little, because the blocks it
+  //     lands among are laid out on arrival. So re-aim for a few frames until
+  //     the position stops moving, and stop the moment the reader scrolls.
+  //   • That re-aim used to be a bare instant `scrollTo`, which cut a near
+  //     hop's deceleration short (the correction landed mid-animation and
+  //     replaced its ease-out with a snap) and, on a long hop, could follow
+  //     the fade-in below with a jarring second jump — worst on an object's
+  //     very first real layout, before content-visibility has a remembered
+  //     size for it and the estimate is furthest off. So every correction is
+  //     now either a small 'smooth' nudge (reads as the animation
+  //     continuing) or, if the drift is itself far, the same fade treatment
+  //     as the initial jump — never a bare snap.
+  let _settleToken = 0;
+  function scrollContainerToEl(container, el, offset = 0, behavior = 'smooth') {
+    if (!container || !el) return;
+    // A second call supersedes this one — two settle loops (or two fades)
+    // aiming at different targets would fight each frame.
+    const myToken = ++_settleToken;
+
+    const targetTop = () =>
+      el.getBoundingClientRect().top -
+      container.getBoundingClientRect().top +
+      container.scrollTop -
+      offset;
+
+    // Three viewports is past the distance at which a smooth scroll is legible
+    // anyway, and well past where the intrinsic-size estimates start to bite.
+    const isFar = (from, to) => Math.abs(to - from) > container.clientHeight * 3;
+
+    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const inner = reduceMotion ? null : container.querySelector(':scope > .document-inner');
+
+    // A far jump reads as a hard cut when done instantly, which it must be —
+    // a 'smooth' scroll over that distance is either too slow to be legible
+    // or aiming at a target the estimate has already gotten wrong. Mask it by
+    // fading+sliding `.document-inner` a few px in the direction of travel,
+    // jumping while it's faded out, then fading+sliding the arriving view
+    // back into place from the opposite side. Cheap — opacity/transform are
+    // compositor-only, so they never touch content-visibility's estimated
+    // block sizes. Used for the initial aim at a distant target and for any
+    // settle-loop correction far enough to need the same treatment.
+    const JUMP_MS = 100;
+    // Landing among off-screen blocks is exactly what resolves their
+    // content-visibility estimate to a real size, but that resolution isn't
+    // necessarily done by the very next frame — measured in practice at
+    // ~150ms after the jump, several frames of nothing then one late
+    // correction. Catching that here, still hidden, means the reveal below
+    // shows the reader the true resting place the first time, instead of a
+    // clean fade-in immediately followed by a second, separate scroll to fix
+    // it up. So this polls for a run of quiet frames, not just one, bounded
+    // by a wall-clock deadline so a target that keeps drifting doesn't hold
+    // the reveal open indefinitely.
+    const settleWhileHidden = (top, callback) => {
+      let aimed = top;
+      let stable = 0;
+      const deadline = performance.now() + 350;
+      const check = () => {
+        if (myToken !== _settleToken) return callback(aimed);
+        const t = targetTop();
+        if (Math.abs(t - aimed) > 2) {
+          aimed = t;
+          stable = 0;
+          container.scrollTo({ top: t, behavior: 'instant' });
+        } else if (++stable >= 4) {
+          return callback(aimed);
+        }
+        if (performance.now() >= deadline) return callback(aimed);
+        requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    };
+    const fadedJump = (top, fromTop, done) => {
+      if (!inner) {
+        container.scrollTo({ top, behavior: 'instant' });
+        return done(top);
+      }
+      const goingDown = top > fromTop;
+      inner.style.transition = `opacity ${JUMP_MS}ms ease, transform ${JUMP_MS}ms ease`;
+      inner.style.opacity = '0.4';
+      inner.style.transform = `translateY(${goingDown ? -8 : 8}px)`;
+      setTimeout(() => {
+        if (myToken !== _settleToken) {
+          // Superseded mid-fade by a newer scroll — don't leave the document
+          // stuck dimmed if that newer scroll turns out to be a near hop.
+          inner.style.transition = '';
+          inner.style.opacity = '';
+          inner.style.transform = '';
+          return;
+        }
+        container.scrollTo({ top, behavior: 'instant' });
+        // Neutralize the leaving offset before measuring — settleWhileHidden
+        // reads the target's position via getBoundingClientRect(), which
+        // reflects `inner`'s transform live. Measuring while still offset by
+        // the leaving slide made every landing spot wrong by that same few
+        // px, which the settle loop then "corrected" right as the arrival
+        // slide finished — a manufactured wobble, not real drift.
+        inner.style.transition = 'none';
+        inner.style.transform = 'none';
+        settleWhileHidden(top, (landedAt) => {
+          if (myToken !== _settleToken) return;
+          inner.style.transform = `translateY(${goingDown ? 8 : -8}px)`;
+          void inner.offsetHeight; // flush so the reversed offset paints before re-enabling the transition
+          inner.style.transition = `opacity ${JUMP_MS}ms ease, transform ${JUMP_MS}ms ease`;
+          inner.style.opacity = '';
+          inner.style.transform = '';
+          // Wait for the slide to actually finish before handing off to the
+          // settle loop — a bare setTimeout(JUMP_MS) can fire a frame before
+          // the compositor's last frame of the transition, which would read
+          // as spurious drift.
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            inner.removeEventListener('transitionend', onTransitionEnd);
+            inner.style.transition = '';
+            if (myToken === _settleToken) done(landedAt);
+          };
+          const onTransitionEnd = (e) => {
+            if (e.target === inner && e.propertyName === 'transform') finish();
+          };
+          inner.addEventListener('transitionend', onTransitionEnd);
+          // Fallback in case transitionend never fires (e.g. the transform
+          // was already at rest, so nothing was actually animated).
+          setTimeout(finish, JUMP_MS + 50);
+        });
+      }, JUMP_MS);
+    };
+
+    const first = targetTop();
+    const fromTop = container.scrollTop;
+
+    const armSettleLoop = (landedAt) => {
+      let cancelled = false;
+      const cancel = () => { cancelled = true; };
+      container.addEventListener('wheel', cancel, { passive: true });
+      container.addEventListener('touchstart', cancel, { passive: true });
+      // Keyboard scrolling fires at whatever holds focus, usually the body.
+      window.addEventListener('keydown', cancel, { passive: true });
+      const stop = () => {
+        container.removeEventListener('wheel', cancel);
+        container.removeEventListener('touchstart', cancel);
+        window.removeEventListener('keydown', cancel);
+      };
+      let frames = 0;
+      let stable = 0;
+      // The position we actually landed at, not a fresh reading — a fresh
+      // reading here would silently swallow any drift that happened since
+      // (the whole fade sequence, on a far jump), so the loop's first check
+      // would never catch it.
+      let lastAimed = landedAt;
+      const settle = () => {
+        if (cancelled || myToken !== _settleToken) return stop();
+        const t = targetTop();
+        if (Math.abs(t - lastAimed) > 2) {
+          // The target moved since we last aimed — a content-visibility block
+          // resolved to its real size.
+          lastAimed = t;
+          stable = 0;
+          if (isFar(container.scrollTop, t)) {
+            fadedJump(t, container.scrollTop, (landedAt) => {
+              lastAimed = landedAt;
+              if (++frames > 90) return stop();
+              requestAnimationFrame(settle);
+            });
+            return;
+          }
+          container.scrollTo({ top: t, behavior: 'smooth' });
+        } else if (Math.abs(t - container.scrollTop) <= 2) {
+          if (++stable >= 5) return stop();
+        } else {
+          stable = 0; // still catching up to `lastAimed`; let it arrive, don't re-trigger
+        }
+        if (++frames > 90) return stop();
+        requestAnimationFrame(settle);
+      };
+      // A near hop is still animating; give it time to arrive before re-aiming,
+      // or the first correction would cut the animation short.
+      setTimeout(() => requestAnimationFrame(settle), isFar(fromTop, first) ? 0 : 450);
+    };
+
+    if (isFar(fromTop, first)) {
+      fadedJump(first, fromTop, armSettleLoop);
+    } else {
+      container.scrollTo({ top: first, behavior });
+      armSettleLoop(first);
+    }
+  }
+
+  // ── Config ──────────────────────────────────────────────────────────────────
+  const ALL_LANGS = [
+    'BG','CS','DA','DE','EL','EN','ES','ET','FI',
+    'FR','GA','HR','HU','IT','LT','LV','MT','NL',
+    'PL','PT','RO','SK','SL','SV'
+  ];
+
+  // ── Document identity ───────────────────────────────────────────────────────
+  // The statically rendered per-document pages (/ai-act-explorer/digital-omnibus/
+  // etc.) set window.__DOC_ID before this script loads; the legacy client-rendered
+  // views are addressed by the ?doc= URL param.
+  const DOC_ID    = window.__DOC_ID || new URLSearchParams(location.search).get('doc') || 'ai_act';
+  const dataDir   = `/docs/${DOC_ID}/data`;
+  const docParam  = DOC_ID !== 'ai_act' ? `&doc=${DOC_ID}` : '';  // appended to &-style query strings
+  const docParamQ = DOC_ID !== 'ai_act' ? `?doc=${DOC_ID}` : '';  // used before # in anchor URLs
+  let   DOC_CONFIG = null;  // populated by loadDocConfig()
+
+  // ── Shared doc-switcher (keep in sync with cop.js) ────────────────────────
+  // Docs that belong to the "Implementing Acts" group
+  const IMPL_ACTS_DOCS = [
+    { id: 'scientific_panel', slug: 'scientific-panel', title: 'Scientific Panel', desc: 'Implementing Reg. 2025/454' },
+    { id: 'proceedings', slug: 'proceedings', title: 'Evaluations and Proceedings', desc: 'Implementing Reg. 2026/1755' },
+  ];
+  function buildDocSwitcherHtml(activeId) {
+    const copHref = `${explorerPath()}/cop-home`;
+    const implActive = IMPL_ACTS_DOCS.some(d => d.id === activeId);
+    const children   = IMPL_ACTS_DOCS.map(d =>
+      `<a class="doc-switcher-card doc-switcher-child${d.id === activeId ? ' active' : ''}" href="${explorerPath()}/${d.slug}/">
+        <div class="doc-switcher-title"><i class="fas fa-file-alt doc-switcher-icon"></i>${d.title}</div>
+        <div class="doc-switcher-desc">${d.desc}</div>
+      </a>`
+    ).join('');
+    return `<div class="toc-section-header">AI Act Texts</div>` +
+    `<div class="doc-switcher">
+      <a class="doc-switcher-card${activeId === 'ai_act' ? ' active' : ''}" href="${explorerPath()}/">
+        <div class="doc-switcher-title"><i class="fas fa-file-alt doc-switcher-icon"></i>EU AI Act</div>
+        <div class="doc-switcher-desc">Regulation (EU) 2024/1689</div>
+      </a>
+      <a class="doc-switcher-card${activeId === 'digital_omnibus' ? ' active' : ''}" href="${explorerPath()}/digital-omnibus/">
+        <div class="doc-switcher-title"><i class="fas fa-file-alt doc-switcher-icon"></i>Digital Omnibus on AI</div>
+        <div class="doc-switcher-desc">Regulation (EU) 2026/1744</div>
+      </a>
+      <div class="doc-switcher-group${implActive ? ' open' : ''}">
+        <button class="doc-switcher-card doc-switcher-group-btn${implActive ? ' active' : ''}"
+                onclick="this.closest('.doc-switcher-group').classList.toggle('open')">
+          <div class="doc-switcher-group-label">
+            <div class="doc-switcher-title"><i class="fas fa-file-alt doc-switcher-icon"></i>Implementing Acts</div>
+            <div class="doc-switcher-desc">Delegated &amp; implementing regs.</div>
+          </div>
+          <i class="fas fa-chevron-right doc-switcher-group-arrow"></i>
+        </button>
+        <div class="doc-switcher-group-items">${children}</div>
+      </div>
+      <a class="doc-switcher-card${activeId === 'cop' ? ' active' : ''}" href="${copHref}">
+        <div class="doc-switcher-title"><i class="fas fa-file-alt doc-switcher-icon"></i>Code of Practice</div>
+        <div class="doc-switcher-desc">GPAI Models · Art. 56</div>
+      </a>
+    </div>`;
+  }
+
+  // ── Global render state ────────────────────────────────────────────────────
+  // All vars below are mutable module-level state reset on each loadAndRender()
+  // call (or language switch). openXDocPeekTray() saves/restores these when
+  // rendering cross-document content so normal rendering is never affected.
+  let currentLang = 'EN';
+
+  // Title lookup: 'article-5' → 'Prohibited AI practices'
+  // Link patterns: derived from localized_label values per language
+  const langCache   = {};   // lang → sorted blocks array (populated on demand + current lang)
+  let cmpContext    = null; // { type, item, pid, label } — current comparison target
+  let cmpSelected   = [];   // language codes shown in the modal
+
+  let titleMap      = {};   // 'article-5' → title string
+  let shortTitleMap = {};   // 'annex-5'   → short_title (from titles data; falls back to titleMap)
+  let linkPatterns  = [];   // [{re, fn}] for internal cross-references
+  let fnMap         = {};   // footnote number → raw text (for hover tooltip)
+  let fnRefCounter  = {};   // footnote number → # of in-text refs seen (reset per render)
+  let localizedLabel = {};  // 'article-5' → 'Artikel 5' (from per-language titles)
+  let renderContext  = null; // { type, num, pid, spo } — set while rendering each block
+  let termDefs      = [];   // [{re, term, source, tip}] — Article 3 defined terms
+  let ctxTips       = [];   // [{re, source, summary}] — cross-reference context tips (from CSV)
+  // ctxTipsLang tracks which language's context_tooltips file is currently loaded
+  let pathways        = [];   // guided pathway definitions loaded from pathways.json
+  let pathwaysLoaded  = false;
+  let activePathway   = null; // currently active pathway object
+  let plCurrentIdx    = 0;    // index into activePathway.items of the current/focused item
+  let plChecked       = {};   // pathway id → Set of checked (read) item indices
+  let structureTitles = {};   // lang → { chapters:{I:title}, sections:{'III-1':title} }
+  let structureTitlesLoaded = false;
+  let allCtxRows      = null; // raw parsed rows from context_tooltips.tsv (loaded once)
+  let articleMeta     = {};   // 'article-5' → { comes_into_force, label, url }
+  let paraMeta        = {};   // 'article-6-1' → { comes_into_force, label, url } (paragraph-level)
+  let articleMetaLoaded = false;
+  let uiStr = { recitals:'Recitals', recital:'Recital', articles:'Articles', annexes:'Annexes',
+                footnotes:'Footnotes', chapter:'CHAPTER', section:'Section',
+                numeralFirst: false };
+
+  // ── Chapter / Section structure — populated from docs.json by loadDocConfig() ──
+  let STRUCTURE = [];
+
+  // ── Article numbering ─────────────────────────────────────────────────────
+  // The Digital Omnibus inserted lettered articles (4a, 60a, 75a–75d), so an
+  // article number is a string, not an integer. A lettered article belongs to the
+  // same chapter as its stem and sorts immediately after it — "75d" is between 75
+  // and 76 — so numbering is compared as [stem, suffix]. Coercing with +n would
+  // yield NaN and drop these articles out of every range check and sort.
+    function artStem(n) { return window.__aiactUtils.artStem(n); }
+    function artSuffix(n) { return window.__aiactUtils.artSuffix(n); }
+    function artCompare(a, b) { return window.__aiactUtils.artCompare(a, b); }
+    function artInRange(n, lo, hi) { return window.__aiactUtils.artInRange(n, lo, hi); }
+  // True when this number carries a letter, i.e. the provision was inserted by an
+  // amending act rather than being part of the original text.
+  
+
+  // ── In-document UI chrome, translated by us rather than by Weglot ─────────
+  // The document body is wrapped in `.weglot-ignore` because the legal text is
+  // official EU translation that must never be machine-translated — and Weglot's
+  // `excluded_blocks` beats `dynamic`, so nothing nested inside can be re-included.
+  // Any UI label rendered *within* the document therefore has to be translated
+  // here instead.
+  //
+  // FIRST-PASS TRANSLATIONS — NOT YET REVIEWED BY NATIVE SPEAKERS.
+  // Produced without a translation API; every non-EN entry needs checking before
+  // release. Legal-register terms ("Comes into force", "deleted") matter most:
+  // prefer the wording the Act itself uses in that language.
+  const UI_CHROME = {
+    BG: { relatedRecitals:'Свързани съображения:', relatedTo:'Свързано с:', comesIntoForce:'Влиза в сила', accordingTo:'съгласно', openAsPage:'Отваряне като страница', openPeek:'Отваряне в страничен панел', compareLangs:'Сравняване между езици', askAi:'Попитайте асистента за това', omAmended:'изменен', omNew:'нов', omDeleted:'заличен', omOriginal:'оригинал', omAbsent:'Не е съществувало преди изменението.', omRemoved:'Не съществува след изменението.', annexIII:'високорисков съгласно приложение III', annexI:'високорисков съгласно приложение I' },
+    CS: { relatedRecitals:'Související body odůvodnění:', relatedTo:'Souvisí s:', comesIntoForce:'Nabývá účinnosti', accordingTo:'podle', openAsPage:'Otevřít jako stránku', openPeek:'Otevřít v bočním panelu', compareLangs:'Porovnat jazyky', askAi:'Zeptat se asistenta na toto', omAmended:'změněno', omNew:'nové', omDeleted:'zrušeno', omOriginal:'původní', omAbsent:'Před změnou neexistovalo.', omRemoved:'Po změně neexistuje.', annexIII:'vysoce rizikové podle přílohy III', annexI:'vysoce rizikové podle přílohy I' },
+    DA: { relatedRecitals:'Relaterede betragtninger:', relatedTo:'Relateret til:', comesIntoForce:'Træder i kraft', accordingTo:'i henhold til', openAsPage:'Åbn som side', openPeek:'Åbn i sidepanel', compareLangs:'Sammenlign sprog', askAi:'Spørg assistenten om dette', omAmended:'ændret', omNew:'ny', omDeleted:'slettet', omOriginal:'original', omAbsent:'Fandtes ikke før ændringen.', omRemoved:'Findes ikke efter ændringen.', annexIII:'højrisiko i henhold til bilag III', annexI:'højrisiko i henhold til bilag I' },
+    DE: { relatedRecitals:'Zugehörige Erwägungsgründe:', relatedTo:'Bezug zu:', comesIntoForce:'Gilt ab', accordingTo:'gemäß', openAsPage:'Als Seite öffnen', openPeek:'In Seitenleiste öffnen', compareLangs:'Sprachen vergleichen', askAi:'Den Assistenten dazu fragen', omAmended:'geändert', omNew:'neu', omDeleted:'gestrichen', omOriginal:'Original', omAbsent:'Vor der Änderung nicht vorhanden.', omRemoved:'Nach der Änderung nicht mehr vorhanden.', annexIII:'Hochrisiko nach Anhang III', annexI:'Hochrisiko nach Anhang I' },
+    EL: { relatedRecitals:'Σχετικές αιτιολογικές σκέψεις:', relatedTo:'Σχετίζεται με:', comesIntoForce:'Τίθεται σε ισχύ', accordingTo:'σύμφωνα με', openAsPage:'Άνοιγμα ως σελίδα', openPeek:'Άνοιγμα σε πλαϊνό πλαίσιο', compareLangs:'Σύγκριση γλωσσών', askAi:'Ρωτήστε τον βοηθό σχετικά με αυτό', omAmended:'τροποποιήθηκε', omNew:'νέο', omDeleted:'διαγράφηκε', omOriginal:'πρωτότυπο', omAbsent:'Δεν υπήρχε πριν από την τροποποίηση.', omRemoved:'Δεν υπάρχει πλέον μετά την τροποποίηση.', annexIII:'υψηλού κινδύνου βάσει του παραρτήματος III', annexI:'υψηλού κινδύνου βάσει του παραρτήματος I' },
+    EN: { relatedRecitals:'Related recitals:', relatedTo:'Related to:', comesIntoForce:'Comes into force', accordingTo:'according to', openAsPage:'Open as page', openPeek:'Open in side peek', compareLangs:'Compare across languages', askAi:'Ask the assistant about this', omAmended:'amended', omNew:'new', omDeleted:'deleted', omOriginal:'original', omAbsent:'Not present before the amendment.', omRemoved:'Not present after the amendment.', annexIII:'high-risk under Annex III', annexI:'high-risk under Annex I' },
+    ES: { relatedRecitals:'Considerandos relacionados:', relatedTo:'Relacionado con:', comesIntoForce:'Entra en vigor', accordingTo:'de conformidad con', openAsPage:'Abrir como página', openPeek:'Abrir en panel lateral', compareLangs:'Comparar idiomas', askAi:'Preguntar al asistente sobre esto', omAmended:'modificado', omNew:'nuevo', omDeleted:'suprimido', omOriginal:'original', omAbsent:'No existía antes de la modificación.', omRemoved:'Ya no existe tras la modificación.', annexIII:'alto riesgo con arreglo al anexo III', annexI:'alto riesgo con arreglo al anexo I' },
+    ET: { relatedRecitals:'Seotud põhjendused:', relatedTo:'Seotud:', comesIntoForce:'Jõustub', accordingTo:'kohaselt', openAsPage:'Ava lehena', openPeek:'Ava külgpaneelis', compareLangs:'Võrdle keeli', askAi:'Küsi selle kohta assistendilt', omAmended:'muudetud', omNew:'uus', omDeleted:'välja jäetud', omOriginal:'algne', omAbsent:'Enne muudatust puudus.', omRemoved:'Pärast muudatust puudub.', annexIII:'suure riskiga III lisa kohaselt', annexI:'suure riskiga I lisa kohaselt' },
+    FI: { relatedRecitals:'Liittyvät johdanto-osan kappaleet:', relatedTo:'Liittyy:', comesIntoForce:'Tulee voimaan', accordingTo:'perusteella', openAsPage:'Avaa sivuna', openPeek:'Avaa sivupaneelissa', compareLangs:'Vertaa kieliä', askAi:'Kysy avustajalta tästä', omAmended:'muutettu', omNew:'uusi', omDeleted:'poistettu', omOriginal:'alkuperäinen', omAbsent:'Ei ollut olemassa ennen muutosta.', omRemoved:'Ei ole enää olemassa muutoksen jälkeen.', annexIII:'suuririskinen liitteen III nojalla', annexI:'suuririskinen liitteen I nojalla' },
+    FR: { relatedRecitals:'Considérants liés:', relatedTo:'Lié à:', comesIntoForce:'Entre en application', accordingTo:'conformément à', openAsPage:'Ouvrir comme page', openPeek:'Ouvrir dans le panneau latéral', compareLangs:'Comparer les langues', askAi:'Interroger l’assistant à ce sujet', omAmended:'modifié', omNew:'nouveau', omDeleted:'supprimé', omOriginal:'original', omAbsent:'N’existait pas avant la modification.', omRemoved:'N’existe plus après la modification.', annexIII:'à haut risque au titre de l’annexe III', annexI:'à haut risque au titre de l’annexe I' },
+    GA: { relatedRecitals:'Aithrisí gaolmhara:', relatedTo:'Bainteach le:', comesIntoForce:'Tagann i bhfeidhm', accordingTo:'de réir', openAsPage:'Oscail mar leathanach', openPeek:'Oscail sa phainéal taoibh', compareLangs:'Cuir teangacha i gcomparáid', askAi:'Cuir ceist ar an gcúntóir faoi seo', omAmended:'leasaithe', omNew:'nua', omDeleted:'scriosta', omOriginal:'bunaidh', omAbsent:'Ní raibh sé ann roimh an leasú.', omRemoved:'Níl sé ann tar éis an leasaithe.', annexIII:'ardriosca faoi Iarscríbhinn III', annexI:'ardriosca faoi Iarscríbhinn I' },
+    HR: { relatedRecitals:'Povezane uvodne izjave:', relatedTo:'Povezano s:', comesIntoForce:'Primjenjuje se od', accordingTo:'u skladu s', openAsPage:'Otvori kao stranicu', openPeek:'Otvori u bočnoj ploči', compareLangs:'Usporedi jezike', askAi:'Pitajte asistenta o ovome', omAmended:'izmijenjeno', omNew:'novo', omDeleted:'brisano', omOriginal:'izvorno', omAbsent:'Nije postojalo prije izmjene.', omRemoved:'Ne postoji nakon izmjene.', annexIII:'visokorizični na temelju Priloga III.', annexI:'visokorizični na temelju Priloga I.' },
+    HU: { relatedRecitals:'Kapcsolódó preambulumbekezdések:', relatedTo:'Kapcsolódik:', comesIntoForce:'Alkalmazandó', accordingTo:'szerint', openAsPage:'Megnyitás oldalként', openPeek:'Megnyitás oldalsávban', compareLangs:'Nyelvek összehasonlítása', askAi:'Kérdezze az asszisztenst erről', omAmended:'módosítva', omNew:'új', omDeleted:'törölve', omOriginal:'eredeti', omAbsent:'A módosítás előtt nem létezett.', omRemoved:'A módosítás után már nem létezik.', annexIII:'nagy kockázatú a III. melléklet szerint', annexI:'nagy kockázatú az I. melléklet szerint' },
+    IT: { relatedRecitals:'Considerando correlati:', relatedTo:'Correlato a:', comesIntoForce:'Si applica a decorrere dal', accordingTo:'ai sensi di', openAsPage:'Apri come pagina', openPeek:'Apri nel pannello laterale', compareLangs:'Confronta le lingue', askAi:'Chiedi all’assistente informazioni su questo', omAmended:'modificato', omNew:'nuovo', omDeleted:'soppresso', omOriginal:'originale', omAbsent:'Non esisteva prima della modifica.', omRemoved:'Non esiste più dopo la modifica.', annexIII:'ad alto rischio ai sensi dell’allegato III', annexI:'ad alto rischio ai sensi dell’allegato I' },
+    LT: { relatedRecitals:'Susijusios konstatuojamosios dalys:', relatedTo:'Susiję su:', comesIntoForce:'Taikoma nuo', accordingTo:'pagal', openAsPage:'Atverti kaip puslapį', openPeek:'Atverti šoniniame skydelyje', compareLangs:'Palyginti kalbas', askAi:'Paklauskite asistento apie tai', omAmended:'pakeista', omNew:'nauja', omDeleted:'išbraukta', omOriginal:'pradinis', omAbsent:'Neegzistavo iki pakeitimo.', omRemoved:'Nebeegzistuoja po pakeitimo.', annexIII:'didelės rizikos pagal III priedą', annexI:'didelės rizikos pagal I priedą' },
+    LV: { relatedRecitals:'Saistītie apsvērumi:', relatedTo:'Saistīts ar:', comesIntoForce:'Piemēro no', accordingTo:'saskaņā ar', openAsPage:'Atvērt kā lapu', openPeek:'Atvērt sānu panelī', compareLangs:'Salīdzināt valodas', askAi:'Pajautāt asistentam par šo', omAmended:'grozīts', omNew:'jauns', omDeleted:'svītrots', omOriginal:'sākotnējais', omAbsent:'Pirms grozījuma nepastāvēja.', omRemoved:'Pēc grozījuma vairs nepastāv.', annexIII:'augsta riska saskaņā ar III pielikumu', annexI:'augsta riska saskaņā ar I pielikumu' },
+    MT: { relatedRecitals:'Premessi relatati:', relatedTo:'Relatat ma’:', comesIntoForce:'Japplika minn', accordingTo:'skont', openAsPage:'Iftaħ bħala paġna', openPeek:'Iftaħ fil-panew tal-ġenb', compareLangs:'Qabbel il-lingwi', askAi:'Staqsi lill-assistent dwar dan', omAmended:'emendat', omNew:'ġdid', omDeleted:'imħassar', omOriginal:'oriġinali', omAbsent:'Ma kienx jeżisti qabel l-emenda.', omRemoved:'M’għadux jeżisti wara l-emenda.', annexIII:'riskju għoli skont l-Anness III', annexI:'riskju għoli skont l-Anness I' },
+    NL: { relatedRecitals:'Gerelateerde overwegingen:', relatedTo:'Gerelateerd aan:', comesIntoForce:'Van toepassing vanaf', accordingTo:'overeenkomstig', openAsPage:'Openen als pagina', openPeek:'Openen in zijpaneel', compareLangs:'Talen vergelijken', askAi:'Vraag de assistent hiernaar', omAmended:'gewijzigd', omNew:'nieuw', omDeleted:'geschrapt', omOriginal:'origineel', omAbsent:'Bestond niet vóór de wijziging.', omRemoved:'Bestaat niet meer na de wijziging.', annexIII:'hoog risico op grond van bijlage III', annexI:'hoog risico op grond van bijlage I' },
+    PL: { relatedRecitals:'Powiązane motywy:', relatedTo:'Powiązane z:', comesIntoForce:'Stosuje się od', accordingTo:'zgodnie z', openAsPage:'Otwórz jako stronę', openPeek:'Otwórz w panelu bocznym', compareLangs:'Porównaj języki', askAi:'Zapytaj asystenta o to', omAmended:'zmieniono', omNew:'nowe', omDeleted:'uchylono', omOriginal:'oryginał', omAbsent:'Nie istniało przed zmianą.', omRemoved:'Nie istnieje po zmianie.', annexIII:'wysokiego ryzyka na podstawie załącznika III', annexI:'wysokiego ryzyka na podstawie załącznika I' },
+    PT: { relatedRecitals:'Considerandos relacionados:', relatedTo:'Relacionado com:', comesIntoForce:'É aplicável a partir de', accordingTo:'nos termos de', openAsPage:'Abrir como página', openPeek:'Abrir no painel lateral', compareLangs:'Comparar idiomas', askAi:'Perguntar ao assistente sobre isto', omAmended:'alterado', omNew:'novo', omDeleted:'suprimido', omOriginal:'original', omAbsent:'Não existia antes da alteração.', omRemoved:'Deixou de existir após a alteração.', annexIII:'alto risco nos termos do anexo III', annexI:'alto risco nos termos do anexo I' },
+    RO: { relatedRecitals:'Considerente conexe:', relatedTo:'Legat de:', comesIntoForce:'Se aplică de la', accordingTo:'în conformitate cu', openAsPage:'Deschide ca pagină', openPeek:'Deschide în panoul lateral', compareLangs:'Compară limbile', askAi:'Întreabă asistentul despre aceasta', omAmended:'modificat', omNew:'nou', omDeleted:'eliminat', omOriginal:'original', omAbsent:'Nu exista înainte de modificare.', omRemoved:'Nu mai există după modificare.', annexIII:'cu grad ridicat de risc în temeiul anexei III', annexI:'cu grad ridicat de risc în temeiul anexei I' },
+    SK: { relatedRecitals:'Súvisiace odôvodnenia:', relatedTo:'Súvisí s:', comesIntoForce:'Uplatňuje sa od', accordingTo:'podľa', openAsPage:'Otvoriť ako stránku', openPeek:'Otvoriť v bočnom paneli', compareLangs:'Porovnať jazyky', askAi:'Opýtať sa asistenta na toto', omAmended:'zmenené', omNew:'nové', omDeleted:'vypustené', omOriginal:'pôvodné', omAbsent:'Pred zmenou neexistovalo.', omRemoved:'Po zmene už neexistuje.', annexIII:'vysokorizikové podľa prílohy III', annexI:'vysokorizikové podľa prílohy I' },
+    SL: { relatedRecitals:'Povezane uvodne izjave:', relatedTo:'Povezano z:', comesIntoForce:'Uporablja se od', accordingTo:'v skladu z', openAsPage:'Odpri kot stran', openPeek:'Odpri v stranski plošči', compareLangs:'Primerjaj jezike', askAi:'Vprašajte pomočnika o tem', omAmended:'spremenjeno', omNew:'novo', omDeleted:'črtano', omOriginal:'izvirno', omAbsent:'Pred spremembo ni obstajalo.', omRemoved:'Po spremembi ne obstaja več.', annexIII:'visokotvegani na podlagi Priloge III', annexI:'visokotvegani na podlagi Priloge I' },
+    SV: { relatedRecitals:'Relaterade skäl:', relatedTo:'Relaterat till:', comesIntoForce:'Tillämpas från', accordingTo:'i enlighet med', openAsPage:'Öppna som sida', openPeek:'Öppna i sidopanel', compareLangs:'Jämför språk', askAi:'Fråga assistenten om detta', omAmended:'ändrad', omNew:'ny', omDeleted:'struken', omOriginal:'original', omAbsent:'Fanns inte före ändringen.', omRemoved:'Finns inte längre efter ändringen.', annexIII:'hög risk enligt bilaga III', annexI:'hög risk enligt bilaga I' },
+  };
+
+  // ── Localized UI strings for all 24 languages ─────────────────────────────────
+  // recital / recitals / annexes / footnotes / chapter word / section word / numeral-first
+  const UI_STRINGS = {
+    BG: { recital:'Съображение',           recitals:'Съображения',              articles:'Членове',      annexes:'Приложения',    footnotes:'Бележки под линия',          chapter:'ГЛАВА',    section:'Раздел',    numeralFirst:false },
+    CS: { recital:'Bod odůvodnění',         recitals:'Odůvodnění',               articles:'Články',        annexes:'Přílohy',       footnotes:'Poznámky pod čarou',         chapter:'KAPITOLA', section:'Oddíl',     numeralFirst:false },
+    DA: { recital:'Betragtning',            recitals:'Betragtninger',            articles:'Artikler',      annexes:'Bilag',         footnotes:'Fodnoter',                   chapter:'KAPITEL',  section:'Afdeling',  numeralFirst:false },
+    DE: { recital:'Erwägungsgrund',         recitals:'Erwägungsgründe',          articles:'Artikel',       annexes:'Anhänge',       footnotes:'Fußnoten',                   chapter:'KAPITEL',  section:'Abschnitt', numeralFirst:false },
+    EL: { recital:'Αιτιολογική σκέψη',     recitals:'Αιτιολογικές σκέψεις',    articles:'Άρθρα',         annexes:'Παραρτήματα',   footnotes:'Υποσημειώσεις',              chapter:'ΚΕΦΑΛΑΙΟ', section:'Τμήμα',     numeralFirst:false },
+    EN: { recital:'Recital',               recitals:'Recitals',                 articles:'Articles',      annexes:'Annexes',       footnotes:'Footnotes',                  chapter:'Chapter',  section:'Section',   numeralFirst:false },
+    ES: { recital:'Considerando',          recitals:'Considerandos',            articles:'Artículos',     annexes:'Anexos',        footnotes:'Notas al pie',               chapter:'CAPÍTULO', section:'Sección',   numeralFirst:false },
+    ET: { recital:'Põhjendus',             recitals:'Põhjendused',              articles:'Artiklid',      annexes:'Lisad',         footnotes:'Allmärkused',                chapter:'PEATÜKK',  section:'Jagu',      numeralFirst:true  },
+    FI: { recital:'Johdanto-osan kappale', recitals:'Johdanto-osan kappaleet',  articles:'Artiklat',      annexes:'Liitteet',      footnotes:'Alaviitteet',                chapter:'LUKU',     section:'Jakso',     numeralFirst:true  },
+    FR: { recital:'Considérant',           recitals:'Considérants',             articles:'Articles',      annexes:'Annexes',       footnotes:'Notes de bas de page',       chapter:'CHAPITRE', section:'Section',   numeralFirst:false },
+    GA: { recital:'Aithris',               recitals:'Aithrisí',                 articles:'Airteagail',    annexes:'Iarscríbhinní', footnotes:'Fontnótaí',                  chapter:'CAIBIDIL', section:'Roinn',     numeralFirst:false },
+    HR: { recital:'Uvodna izjava',         recitals:'Uvodne izjave',            articles:'Članci',        annexes:'Prilozi',       footnotes:'Fusnote',                    chapter:'POGLAVLJE',section:'Odjeljak',  numeralFirst:false },
+    HU: { recital:'Preambulumbekezdés',    recitals:'Preambulumbekezdések',     articles:'Cikkek',        annexes:'Mellékletek',   footnotes:'Lábjegyzetek',               chapter:'FEJEZET',  section:'Szakasz',   numeralFirst:true  },
+    IT: { recital:'Considerando',          recitals:'Considerando',             articles:'Articoli',      annexes:'Allegati',      footnotes:'Note a piè di pagina',       chapter:'CAPO',     section:'Sezione',   numeralFirst:false },
+    LT: { recital:'Konstatuojamoji dalis', recitals:'Konstatuojamosios dalys',  articles:'Straipsniai',   annexes:'Priedai',       footnotes:'Išnašos',                    chapter:'SKYRIUS',  section:'Skirsnis',  numeralFirst:true  },
+    LV: { recital:'Apsvērums',             recitals:'Apsvērumi',                articles:'Panti',         annexes:'Pielikumi',     footnotes:'Zemsvītras piezīmes',        chapter:'NODAĻA',   section:'Iedaļa',    numeralFirst:true  },
+    MT: { recital:'Premessa',              recitals:'Premessi',                 articles:'Artikoli',      annexes:'Annessi',       footnotes:"Noti f'qiegħ il-paġna",      chapter:'KAPITOLU', section:'Taqsima',   numeralFirst:false },
+    NL: { recital:'Overweging',            recitals:'Overwegingen',             articles:'Artikelen',     annexes:'Bijlagen',      footnotes:'Voetnoten',                  chapter:'HOOFDSTUK',section:'Afdeling',  numeralFirst:false },
+    PL: { recital:'Motyw',                 recitals:'Motywy',                   articles:'Artykuły',      annexes:'Załączniki',    footnotes:'Przypisy',                   chapter:'ROZDZIAŁ', section:'Sekcja',    numeralFirst:false },
+    PT: { recital:'Considerando',          recitals:'Considerandos',            articles:'Artigos',       annexes:'Anexos',        footnotes:'Notas de rodapé',            chapter:'CAPÍTULO', section:'Secção',    numeralFirst:false },
+    RO: { recital:'Considerent',           recitals:'Considerente',             articles:'Articole',      annexes:'Anexe',         footnotes:'Note de subsol',             chapter:'CAPITOLUL',section:'Secțiunea', numeralFirst:false },
+    SK: { recital:'Odôvodnenie',           recitals:'Odôvodnenia',              articles:'Články',        annexes:'Prílohy',       footnotes:'Poznámky pod čiarou',        chapter:'KAPITOLA', section:'Oddiel',    numeralFirst:false },
+    SL: { recital:'Uvodna izjava',         recitals:'Uvodne izjave',            articles:'Členi',         annexes:'Prilogi',       footnotes:'Opombe',                     chapter:'POGLAVJE', section:'Oddelek',   numeralFirst:false },
+    SV: { recital:'Skäl',                  recitals:'Skäl',                     articles:'Artiklar',      annexes:'Bilagor',       footnotes:'Fotnoter',                   chapter:'KAPITEL',  section:'Avsnitt',   numeralFirst:false },
+  };
+
+  // ── Shared request memo ───────────────────────────────────────────────────────
+  // The twin of jsonOnce() in src/scripts/render-pipeline.ts, reading the same
+  // Map. This is a classic script and that is a module, so they cannot share a
+  // variable — but they do want the same small files: /docs.json here and in
+  // loadRenderState(), omnibus_map.json here and there too. Whichever asks
+  // first makes the request; the other gets the same promise. The parsed object
+  // is shared by reference, so callers must treat it as read-only. Only small,
+  // read-only files belong here.
+  function jsonOnce(url) {
+    const cache = (window.__aiactJsonOnce ??= new Map());
+    let p = cache.get(url);
+    if (!p) {
+      p = fetch(url).then(res => {
+        if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+        return res.json();
+      });
+      cache.set(url, p);
+    }
+    return p;
+  }
+
+  // ── Document config loader ────────────────────────────────────────────────────
+  let docConfigLoaded = false;
+  async function loadDocConfig() {
+    if (docConfigLoaded) return;
+    docConfigLoaded = true;
+    try {
+      const docs = await jsonOnce('/docs.json');
+      DOC_CONFIG = docs.find(d => d.id === DOC_ID) || docs[0];
+      STRUCTURE  = DOC_CONFIG.structure || [];
+    } catch(e) {}
+  }
+
+  // Chrome strings fall back to English if a language is missing a key.
+  function chrome(key) {
+    const t = UI_CHROME[(currentLang || 'EN').toUpperCase()] || UI_CHROME.EN;
+    return t[key] ?? UI_CHROME.EN[key] ?? '';
+  }
+
+  // ── Structure helpers ─────────────────────────────────────────────────────────
+  function getChapterForArt(n) {
+    return STRUCTURE.find(ch => artInRange(n, ch.arts[0], ch.arts[1])) || null;
+  }
+  function getSectionForArt(n) {
+    for (const ch of STRUCTURE) {
+      if (!ch.sections) continue;
+      const sec = ch.sections.find(s => artInRange(n, s.arts[0], s.arts[1]));
+      if (sec) return { ch, sec };
+    }
+    return null;
+  }
+
+  // ── Utilities ────────────────────────────────────────────────────────────────
+  
+
+    function esc(s) { return window.__aiactUtils.esc(s); }
+
+  // Escape a string for use in a RegExp
+  
+
+  // Apply fn() only to text nodes in an HTML string (skip content inside tags)
+  
+
+  // ── Term definitions (Article 3 tooltips) ────────────────────────────────
+  // Build Article 3 term tooltip list from blocks (any language).
+  // Matches both EN-style ('term' means ...) and continental-style («term»: ... / „term" ...).
+  // Only multi-word terms are included — single common words (risk, data…) are too noisy.
+  // Article 3 defines the Act's terms, and each definition becomes a tooltip.
+  // Every language states them differently, so three shapes are recognised:
+  //   quoted    EN "'AI system' means ...", DE '„KI-System“ ein ...',
+  //             DA '»AI-system«: ...', FI '”term” ...' (same mark both ends)
+  //   prefixed  GA 'ciallaíonn ‘córas intleachta saorga’ ...' — verb first
+  //   bare      SV 'AI-system: ...', LT 'DI sistema – ...' — no quotes at all
+  // Before this, DA/FI/GA/LT/SV matched nothing and contributed no tooltips.
+  
+
+  // ── Context tooltips ──────────────────────────────────────────────────────
+  // Load context_tooltips.tsv once. Wide format — one row per concept, one column per
+  // language. Each language cell holds "trigger phrase||summary text".
+  // Lines starting with # are comments and are ignored.
+  
+
+  // Build ctxTips for the active language from the already-loaded allCtxRows.
+  // Called after every language switch.
+  
+
+  // ── Tooltip applier ──────────────────────────────────────────────────────
+  // Apply term and context tooltips to an HTML string, touching only text nodes.
+  // ctx tips run first so they take precedence over Art 3 auto-terms for overlapping phrases.
+  
+
+  // ── Ordinals (PT / IT / ES) ──────────────────────────────────────────────
+  // Portuguese, Italian, and Spanish use ordinal suffixes (1.º, n.ºs, etc.)
+  // that look like period-space in the raw JSON source. stripOrdinals() removes
+  // them before regex matching; applyOrdinals() re-inserts them after rendering.
+    function stripOrdinals(s) { return window.__aiactUtils.stripOrdinals(s, currentLang); }
+
+  
+
+  // ── Text rendering ────────────────────────────────────────────────────────
+  // renderText() is the core text pipeline used by all render functions.
+  // Pipeline: stash links → HTML-escape → restore links (detect AI Act xrefs)
+  //           → footnote superscripts → link patterns → term tooltips → ordinals
+  // Depends on: fnMap, fnRefCounter, linkPatterns, termDefs, ctxTips, renderContext
+    function renderText(raw) {
+    return window.__renderPipeline.renderText(raw, RS);
+  }
+
+  // ── Cross-reference link patterns ────────────────────────────────────────
+  // Build cross-reference link patterns from the current titles data.
+  // Each language uses its own localized word for "Article" / "Annex" / "Recital",
+  // including the plural form so "Artikelen 5 en 6" etc. are also linked.
+  //
+  // External-reference detection:
+  //   • Number out of range (AI Act has Articles 1–113) → skip
+  //   • Followed by TEU/TFEU/EEA abbreviation → skip
+  //   • EU regulation citation pattern "(EU/UE/EG) YYYY/N" → skip
+  //   • EN: "of Regulation …", "of Directive …", "of the Treaty …" → skip
+  //
+  // Uses Unicode-aware lookbehind instead of \b so words starting with
+  // non-ASCII characters (Czech Č, Greek Ά, Bulgarian Ч …) are matched.
+  // opts.selfItemRefs — when false, "Article 6" / "Annex III" are left as plain
+  // text instead of being linked to this document's own provisions. Amending
+  // regulations need this: inside the Digital Omnibus, "Article 6" means Article 6
+  // of the act being amended (the AI Act in its Article 1, Regulations 2018/1139
+  // and 2023/1230 in its Articles 2 and 3), never one of its own four articles.
+  // Recital references are still linked — those are the document's own.
+  
+
+
+  // ── Paragraph helpers ────────────────────────────────────────────────────
+    function trailingLabel(pid, spo) { return window.__aiactUtils.trailingLabel(pid, spo); }
+
+  // Indentation depth: count meaningful (non-"0") segments minus 1.
+    function getDepth(pid) { return window.__aiactUtils.getDepth(pid); }
+
+  // ── Rendering ────────────────────────────────────────────────────────────────
+    function renderRecitals(blocks, opts = {}) {
+    return window.__renderPipeline.renderRecitals(blocks, RS, opts);
+  }
+
+    function renderItems(blocks, type, opts = {}) {
+    return window.__renderPipeline.renderItems(blocks, type, RS, opts);
+  }
+
+  // ── Digital Omnibus overlay ───────────────────────────────────────────────
+  // Applied to the block array before rendering, so an amended provision shows
+  // the wording in force with its pre-Omnibus wording one click away. Both
+  // versions go through renderText(), which is why the old text keeps its
+  // cross-references, footnote markers and term tooltips.
+  //
+  // Data comes from omnibus_map.json (coordinates, language-independent) and
+  // omnibus_{lang}.json (text, a parallel array per operation). See
+  // scripts/build_omnibus_overlay.py.
+  let omnibusMap = null;      // { amender, ops: [...] }
+  let omnibusText = null;     // { opId: [text, ...] }
+  let omnibusLoaded = false;
+  let omnibusIndex = {};      // 'article-10-1-1' → block
+  let omnibusTitles = {};     // 'article-77' → heading text the Omnibus substitutes
+  let omnibusOldTitles = {};  // the heading it replaced
+  let omnibusShortTitles = {};// 'annex-14'  → { EN: 'List of Codes …' } for the TOC
+
+  
+
+  const ROMAN_NUMERALS = ['', 'I','II','III','IV','V','VI','VII','VIII','IX','X',
+                          'XI','XII','XIII','XIV','XV','XVI'];
+  
+
+  // "ANNEX XIII" → "ANNEX XIV", in whatever language and word order the document
+  // already uses (ET and LV put the numeral first).
+  
+
+  // "Article 75" → "Article 75a"; the letter goes on the number wherever it sits.
+  
+
+  // Counting for the banner. Blocks are the wrong unit to report: one amendment
+  // can rewrite a paragraph and add four points, which is 5 blocks but 1 change to
+  // 1 article. Articles and annexes are what a reader recognises as "amended".
+  // Counted from the rendered blocks themselves. There used to be a parallel
+  // omnibusIndex built by shared.js's own overlay pass; the overlay now runs in
+  // src/lib/renderer.ts, which stamps _omId on each amended block, so the index
+  // was a second copy of something the blocks already carry.
+  function omnibusStats() {
+    const arts = new Set(), anxs = new Set();
+    let blocks = 0;
+    for (const b of (RS?.blocks || [])) {
+      if (!b._omId) continue;
+      blocks++;
+      (b.type === 'annex' ? anxs : arts).add(String(b.item_number));
+    }
+    return { articles: arts.size, annexes: anxs.size, blocks };
+  }
+  window.omnibusStats = omnibusStats;
+  function omnibusAmendedCount() { return omnibusStats().blocks; }
+  window.omnibusAmendedCount = omnibusAmendedCount;
+
+  // The map stores item numbers as strings; the scraped blocks use numbers for
+  // plain articles. Inserted blocks must match, or a Set of item numbers counts
+  // 10 and "10" as two different articles.
+  
+
+  
+
+  // The per-paragraph control. Wording differs by operation because "show the
+  // previous version" makes no sense for a provision that did not previously
+  // exist, or for one that no longer does.
+  // One short word, constant across states. The label never changes length, so
+  // toggling cannot reflow the paragraph; the pressed styling carries the state.
+  // Read through chrome() so the words follow the document language. Resolved at
+  // render time, not module load, because currentLang is not set yet up here.
+  const OM_LABEL_KEYS = {
+    replace:     { badge: 'omAmended', on: 'omOriginal' },
+    insert:      { badge: 'omNew',     on: 'omOriginal' },
+    insert_item: { badge: 'omNew',     on: 'omOriginal' },
+    delete:      { badge: 'omDeleted', on: 'omOriginal' },
+  };
+  
+  // Font Awesome 5 (FA6 class names do not work here).
+  const OM_RESET_ICON = '<i class="fas fa-undo-alt om-toggle-icon"></i>';
+
+  // Pressed state: the label becomes "original" and a reset icon appears, so the
+  // control reads as "you are looking at the archived version".
+  function setOmToggleState(btn, on) {
+    btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    const label = btn.querySelector('.om-toggle-label');
+    if (label) label.textContent = on ? (btn.dataset.omOn || 'original')
+                                      : (btn.dataset.omOff || 'amended');
+    const icon = btn.querySelector('.om-toggle-icon');
+    if (on && !icon) btn.insertAdjacentHTML('afterbegin', OM_RESET_ICON);
+    else if (!on && icon) icon.remove();
+  }
+
+  // Flips one paragraph between the wording in force and the pre-Omnibus wording.
+  function toggleOmnibusPara(btn) {
+    const para = btn.closest('.para');
+    if (!para) return;
+    const on = !para.classList.contains('om-showing-old');
+    // A deleted paragraph and its sub-points move together — one control reveals
+    // the whole provision.
+    const group = para.dataset.omGroup;
+    const members = group
+      ? document.querySelectorAll(`.para[data-om-group="${CSS.escape(group)}"]`)
+      : [para];
+    members.forEach(el => {
+      el.classList.toggle('om-showing-old', on);
+      el.querySelectorAll('.om-ver.om-old').forEach(x => { x.hidden = !on; });
+      el.querySelectorAll('.om-ver.om-new').forEach(x => { x.hidden = on; });
+    });
+    setOmToggleState(btn, on);
+  }
+  window.toggleOmnibusPara = toggleOmnibusPara;
+
+  // Flips every amended paragraph at once. No control currently calls this — the
+  // whole-document toggle was removed from the overview — but it is the mechanism
+  // that control used, kept for when it comes back. Callable from the console as
+  // setOmnibusView(true).
+
+  function setOmnibusView(showOld) {
+    document.querySelectorAll('.para.om-amended').forEach(para => {
+      const on = !!showOld;
+      para.classList.toggle('om-showing-old', on);
+      para.querySelectorAll('.om-ver.om-old').forEach(el => { el.hidden = !on; });
+      para.querySelectorAll('.om-ver.om-new').forEach(el => { el.hidden = on; });
+      const btn = para.querySelector('.om-toggle');
+      if (btn) setOmToggleState(btn, on);
+    });
+    try { localStorage.setItem('explorer-omnibus-view', showOld ? 'pre' : 'current'); } catch (e) {}
+  }
+  window.setOmnibusView = setOmnibusView;
+
+  // The map's coordinates are Latin ("57(9)(e)") because one file serves all 24
+  // languages, but BG numbers its points а/б/в and EL α/β/γ/δ/ε/στ. The alias
+  // table is derived from block position at build time, so nothing here needs to
+  // know an alphabet — only how to substitute. Returns null when the pid is
+  // already correct for this language, which is the case in 22 of them.
+  
+
+  // The display form of a pid the map supplied, in this document's own letters:
+  // "1.ba" is point (ба) in Bulgarian and (βα) in Greek, "1a" is paragraph 1а
+  // and 1α. Only provisions the Omnibus adds need this — everything scraped
+  // already carries its own letters — and only the label uses it. The pid
+  // itself stays Latin, so anchors, cross-references and the map's coordinates
+  // mean the same thing in all 24 languages.
+  //
+  // Translation is per character, because an inserted letter is built from the
+  // one it follows: (ba) is (b) plus a, so Cyrillic (ба) is (б) plus а. Roman
+  // sub-points are left alone — "1a.a.i" is the first item of a list, not point
+  // (i) — which is safe here because no provision the Omnibus inserts is
+  // labelled with a letter that reads as a roman numeral.
+  const OM_ROMAN_SEGMENT = /^[ivx]+$/i;
+  
+
+  // Annex VIII restarts point numbering in each section, so a pid alone matches
+  // three different blocks. Resolve against the "B.0" marker that opens a section.
+  // The literal pid is tried first: BG writes most of its (a) points with a Latin
+  // "a" and only some with the Cyrillic one, so neither form can be assumed.
+  
+
+  
+
+  // A subparagraph added to an existing paragraph continues that paragraph's
+  // run: Article 40(2) already holds three, so the one the Omnibus adds is the
+  // fourth. Numbering it 1 again gave two blocks the same coordinate — two "2."
+  // labels, and two elements sharing the id p-article-40-2, which left the
+  // second unreachable by anchor. Returns 0 when the pid is new, where the
+  // payload's own numbering is already right.
+  
+
+  // An insert lands after the LAST block of the provision it extends, so the
+  // search runs to the end rather than stopping at the first hit.
+  
+
+  // Fold Omnibus headings into the title maps, keeping the originals so a
+  // reverted heading can be shown alongside a reverted paragraph.
+  
+
+  
+
+  // ── Footnote rendering ────────────────────────────────────────────────────
+    function renderFootnotes(blocks) {
+    return window.__renderPipeline.renderFootnotes(blocks, RS);
+  }
+
+  // ── Structure title localization ───────────────────────────────────────────
+
+  // Parse one CSV row respecting double-quoted fields (RFC 4180).
+  
+
+  // Load structure_titles.csv (wide format: type, key, BG, CS, … SV).
+  
+
+  // Localized chapter title — falls back to English, then STRUCTURE constant
+  function chTitle(chNum) {
+    return structureTitles[currentLang]?.chapters?.[chNum]
+        || structureTitles['EN']?.chapters?.[chNum]
+        || STRUCTURE.find(c => c.num === chNum)?.title
+        || '';
+  }
+
+  // Localized section title — falls back to English, then STRUCTURE constant
+  function secTitle(chNum, secNum) {
+    const key = `${chNum}-${secNum}`;
+    const ch  = STRUCTURE.find(c => c.num === chNum);
+    const sec = ch?.sections?.find(s => s.num === +secNum);
+    return structureTitles[currentLang]?.sections?.[key]
+        || structureTitles['EN']?.sections?.[key]
+        || sec?.title
+        || '';
+  }
+
+
+  // ── Article metadata (comes_into_force / according_to) ────────────────────
+
+  
+
+  // according_to_url is stored as a bare Article-113 fragment (#p-article-113-0.b).
+  // On the AI Act it resolves to the target's object page; single.html overrides
+  // this to point at the full explorer page when there is no object page (see
+  // single-page.js).
+  function metaBadgeHref(url) {
+    return url && url.startsWith('#') ? (objectUrlForAnchor(url.slice(1)) || url) : url;
+  }
+
+  // The amending act's official short name in the reader's language, taken from
+  // the parenthetical of its own title in each language's Official Journal text.
+  function amenderShort() {
+    const a = omnibusMap?.amender;
+    if (!a) return '';
+    return (a.short_titles || {})[(currentLang || 'EN').toUpperCase()] || a.short || '';
+  }
+
+  // Languages whose "according to" connective is a postposition and must follow
+  // the reference. FIRST PASS — needs the same native review as UI_CHROME.
+  const ACCORDING_TO_AFTER = { FI: true, HU: true, ET: true };
+
+  // ── Rendering the entry-into-force metadata ───────────────────────────────
+  // The CSV holds ISO dates and structured references so the badge can be built
+  // in the reader's language. Two rules make it legally correct rather than
+  // merely translated:
+  //   • the date goes through Intl.DateTimeFormat, which knows each locale's date
+  //     grammar (CS "2. prosince 2027", FI "2. joulukuuta 2027") — a month-name
+  //     table would get those inflections wrong;
+  //   • the word for "Article" comes from the Act's own localized label, so it is
+  //     the term the legislator used, and numeral-first languages keep their
+  //     order ("113 artikla", "113. cikk").
+  
+
+  // "2027-12-02@annexIII;2028-08-02@annexI" → localized, qualifiers translated.
+  
+
+  // "article:113:c" → "Artikel 113(c)" / "113 artikla(c)".
+  // "omnibus:4" names the amending act instead, since the provision was inserted
+  // by it and its own Article 4 set the date.
+  
+
+  
+
+  
+
+  // Paragraph-level "comes into force" snippet (e.g. Article 6(1) → 2 August 2027),
+  // rendered directly under the paragraph it applies to. `pid` is the top-level
+  // paragraph number (e.g. "1" for Article 6(1), its points 1.a/1.b included).
+  
+
+  // ── Recital ↔ provision cross-references ──────────────────────────────────
+  // recital_refs.json: { recitalToProvisions: {rec: [{type,num,paragraphs,roman}]},
+  //                      byArticle/byAnnex: {num: {whole:[rec], paragraphs:{pid:[rec]}}} }
+  let recitalRefs = null;
+  let recitalRefsLoaded = false;
+
+  
+
+  // Localized label for an item ("Article 6" / "Annex I" / "Recital 47").
+  
+
+  // Paragraph suffix for a label: "1" → "(1)", "1.a" → "(1)(a)", "8.a" → "(8)(a)",
+  // "A.0" → " (Section A)" (annex section intro).
+  
+
+  // Anchor → href. Object-page URL when the AI Act has one, else a same-page
+  // anchor. single.html overrides this to point back to the full explorer
+  // when there is no object page (see single-page.js).
+  function relHref(anchor) { return objectUrlForAnchor(anchor) || ('#' + anchor); }
+  
+
+  // Links for one provision reference (article/annex/chapter, whole or paragraph).
+  
+
+  
+
+  // "Related to: Article 6(1), Annex I" — rendered under a recital.
+  // Labels are plain text so Weglot translates them (not in a weglot-ignore block).
+  
+
+  // Whole-article/annex related recitals (references with no specific paragraph).
+  
+
+  // Related recitals for a specific paragraph (mirrors the classic site's "Related:").
+  // `depth` indents the line to line up with the (sub-)paragraph's text.
+  
+
+  // ── Guided pathways ────────────────────────────────────────────────────────
+
+  async function loadPathways() {
+    if (pathwaysLoaded) return;
+    pathwaysLoaded = true;
+    try {
+      const res = await fetch(`${dataDir}/pathways.json`);
+      if (res.ok) pathways = await res.json();
+    } catch(e) {}
+  }
+
+  // Return translated field from a pathway/item object, falling back to English default
+  function plStr(obj, key) {
+    return obj.translations?.[currentLang]?.[key] ?? obj[key] ?? '';
+  }
+
+  // Label for a pathway item, using localizedLabel where available
+  function plItemLabel(item) {
+    const key = `${item.type}-${item.num}`;
+    return localizedLabel[key] || `${item.type.charAt(0).toUpperCase() + item.type.slice(1)} ${item.num}`;
+  }
+
+  // Anchor id for a pathway item
+  function plItemAnchor(item) { return `${item.type}-${item.num}`; }
+
+
+  // ── Table of contents ─────────────────────────────────────────────────────────
+  
+
+  // ── TOC view mode ─────────────────────────────────────────────────────────
+  // 'grouped' = chapters → sections → articles (default).
+  // 'flat'    = every article in one list, one click from anywhere. Readers who
+  //             navigate by article number don't know or care which section an
+  //             article sits in; readers browsing the Act's structure do. The
+  //             choice is per-reader, so it persists.
+  const TOC_VIEW_KEY = 'toc-view';
+  let _tocBlocks = null;            // last blocks passed to buildTOC, for rebuilds
+
+  function getTocView() {
+    try { return localStorage.getItem(TOC_VIEW_KEY) === 'flat' ? 'flat' : 'grouped'; }
+    catch (_) { return 'grouped'; }
+  }
+
+  function setTocView(view) {
+    if (view === getTocView()) return;
+    try { localStorage.setItem(TOC_VIEW_KEY, view); } catch (_) {}
+    rebuildTOC();
+  }
+  window.setTocView = setTocView;
+
+  // A page whose TOC needs post-processing (single.html rewrites the anchor-only
+  // hrefs to index URLs) registers it here, so a view switch re-applies it and
+  // owns its own re-init. Without a hook, rebuildTOC does the index.html wiring.
+  let _tocPostRender = null;
+  function setTocPostRender(fn) { _tocPostRender = fn; }
+  window.setTocPostRender = setTocPostRender;
+
+  // Re-render the TOC in place and re-attach everything buildTOC's markup owns.
+  function rebuildTOC() {
+    const tocEl = document.getElementById('toc');
+    if (!tocEl || !_tocBlocks) return;
+    tocEl.innerHTML = buildTOC(_tocBlocks, { view: getTocView() });
+    if (_tocPostRender) { _tocPostRender(tocEl); return; }
+    window._search?.index?.initSidebar?.();
+    initMobileTocFab();
+    initTocHighlight();
+  }
+  window.rebuildTOC = rebuildTOC;
+
+    function buildTOC(blocks, opts = {}) {
+    _tocBlocks = blocks;
+    return window.__renderPipeline.buildTOC(blocks, RS, opts);
+  }
+
+  // ── Feedback toast ────────────────────────────────────────────────────────
+  function initFeedbackToast() {
+    if (document.getElementById('feedbackToast')) return;
+
+    const FEEDBACK_URL = 'https://forms.gle/4mgdPTK4btwDpX8R8';
+    const DISMISSED_KEY = 'feedback-toast-dismissed';
+    let dismissed = false;
+    try { dismissed = !!localStorage.getItem(DISMISSED_KEY); } catch (_) {}
+
+    const toast = document.createElement('div');
+    toast.id = 'feedbackToast';
+    toast.className = 'feedback-toast hidden';
+    toast.innerHTML =
+      `<div class="feedback-toast-icon"><i class="fas fa-comment-alt"></i></div>
+      <div class="feedback-toast-body">
+        <div class="feedback-toast-title">Help us improve</div>
+        <p class="feedback-toast-text">This is a beta tool — we'd love your feedback. <a class="feedback-toast-link" href="${FEEDBACK_URL}" target="_blank" rel="noopener">Share your thoughts →</a></p>
+      </div>
+      <button class="feedback-toast-close" id="feedbackToastClose" aria-label="Close"><i class="fas fa-times"></i></button>`;
+
+    const tab = document.createElement('button');
+    tab.id = 'feedbackTab';
+    tab.className = 'feedback-tab';
+    tab.innerHTML = '<i class="fas fa-comment-alt"></i><span>Feedback</span>';
+
+    document.body.appendChild(toast);
+    document.body.appendChild(tab);
+
+    document.getElementById('feedbackToastClose').addEventListener('click', () => {
+      toast.classList.add('hidden');
+      tab.classList.add('visible');
+      try { localStorage.setItem(DISMISSED_KEY, '1'); } catch (_) {}
+    });
+    tab.addEventListener('click', () => {
+      tab.classList.remove('visible');
+      toast.classList.remove('hidden');
+    });
+
+    // If previously dismissed, show only the tab; otherwise auto-show the toast.
+    if (dismissed) {
+      tab.classList.add('visible');
+    } else {
+      setTimeout(() => toast.classList.remove('hidden'), 1800);
+    }
+  }
+  window.initFeedbackToast = initFeedbackToast;
+  document.addEventListener('DOMContentLoaded', initFeedbackToast);
+
+  // ── Header nav dropdown (keep in sync with cop.js) ────────────────────────
+  function _resetDropdownMenu(btn) {
+    const menu = btn.querySelector('.header-dropdown-menu');
+    if (menu) { menu.style.position = ''; menu.style.top = ''; menu.style.left = ''; menu.style.minWidth = ''; menu.style.transform = ''; }
+  }
+  // On mobile the header is overflow-x:auto, which clips an absolutely
+  // positioned menu. Switch to position:fixed so the menu escapes the clipping
+  // context, clear the CSS transform (translateX(-50%)) so it anchors to the
+  // button's left edge, and clamp it back inside the viewport — the trigger is
+  // the last tab, so its left edge alone puts the menu half off-screen.
+  function _positionDropdownMenu(btn) {
+    const menu = btn.querySelector('.header-dropdown-menu');
+    if (!menu) return;
+    if (window.innerWidth > 768) { _resetDropdownMenu(btn); return; }
+    const rect = btn.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.transform = 'none';
+    menu.style.top = rect.bottom + 'px';
+    const w = menu.getBoundingClientRect().width;
+    menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
+  }
+  // The fixed menu does not travel with the button, and the header scrolls
+  // sideways on mobile — so re-anchor it while it is open. Capture-phase catches
+  // scrolls on the header element itself (scroll events do not bubble).
+  let _openDropdown = null;
+  function _reanchorDropdown() { if (_openDropdown) _positionDropdownMenu(_openDropdown); }
+  function _trackDropdown(btn) {
+    if (!_openDropdown) {
+      window.addEventListener('scroll', _reanchorDropdown, true);
+      window.addEventListener('resize', _reanchorDropdown);
+    }
+    _openDropdown = btn;
+  }
+  function _untrackDropdown() {
+    if (!_openDropdown) return;
+    window.removeEventListener('scroll', _reanchorDropdown, true);
+    window.removeEventListener('resize', _reanchorDropdown);
+    _openDropdown = null;
+  }
+  function closeNavDropdowns() {
+    document.querySelectorAll('.header-doc-dropdown.open').forEach(b => { b.classList.remove('open'); _resetDropdownMenu(b); });
+    _untrackDropdown();
+  }
+  function initNavDropdowns() {
+    document.querySelectorAll('.header-doc-dropdown').forEach(btn => {
+      btn.addEventListener('click', e => {
+        // Don't toggle if user clicked a link inside the dropdown
+        if (_cl(e.target,'.header-dropdown-menu a')) return;
+        const isOpen = btn.classList.contains('open');
+        closeNavDropdowns();
+        if (!isOpen) {
+          btn.classList.add('open');
+          _positionDropdownMenu(btn);
+          _trackDropdown(btn);
+        }
+        e.stopPropagation();
+      });
+    });
+    document.addEventListener('click', closeNavDropdowns);
+  }
+  document.addEventListener('DOMContentLoaded', initNavDropdowns);
+
+  // ── Active doc / nav-tab click → scroll to top ────────────────────────────
+  // Clicking the current document in the sidebar switcher or header tab bar
+  // scrolls the .document panel to the top instead of triggering a page reload.
+  document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('click', e => {
+      const el = _cl(e.target,'.doc-switcher-card.active, .header-doc-tab.active');
+      if (!el) return;
+      // Don't intercept the Implementing Acts group toggle button
+      if (el.classList.contains('doc-switcher-group-btn')) return;
+      e.preventDefault();
+      const docEl = document.getElementById('document');
+      if (docEl) docEl.scrollTo({ top: 0, behavior: 'smooth' });
+      closeTocDrawer();
+    });
+  });
+
+  // ── Mobile: first tap on heading reveals action buttons; second tap fires ──
+  // Without this, invisible buttons get accidentally pressed on first tap.
+  (function() {
+    const isTouch = () => window.matchMedia('(pointer: coarse)').matches;
+    let _revealed = null; // currently revealed heading element
+
+    document.addEventListener('click', e => {
+      if (!isTouch()) return;
+
+      const heading = _cl(e.target,'.item-heading, .recital-header');
+
+      // Tap outside any revealed heading → dismiss
+      if (_revealed && _revealed !== heading) {
+        _revealed.classList.remove('btns-revealed');
+        _revealed = null;
+      }
+
+      if (!heading) return;
+
+      // Superseded where the action sheet drives this heading. That reveal
+      // existed to stop an invisible button being pressed by accident on the
+      // first tap; the sheet hides those buttons outright, so the guard has
+      // nothing left to guard — and because it fires on capture with
+      // preventDefault + stopPropagation, it swallowed the synthetic click the
+      // sheet dispatches and silently broke every heading action. A trigger is
+      // present on exactly the headings whose buttons moved into the sheet.
+      if (heading.querySelector(':scope > .para-sheet-trigger')) return;
+
+      const isActionBtn = !!_cl(e.target,'.open-page-btn, .open-peek-btn, .copy-url-btn, .ask-ai-btn');
+
+      if (isActionBtn) {
+        if (!heading.classList.contains('btns-revealed')) {
+          // First tap on a button: just reveal, don't fire
+          e.preventDefault();
+          e.stopPropagation();
+          heading.classList.add('btns-revealed');
+          _revealed = heading;
+        } else {
+          // Second tap: let it fire, then clean up
+          _revealed = null;
+          heading.classList.remove('btns-revealed');
+        }
+      } else {
+        // Tap on non-button area: reveal if not already
+        if (!heading.classList.contains('btns-revealed')) {
+          heading.classList.add('btns-revealed');
+          _revealed = heading;
+        }
+      }
+    }, true);
+  })();
+
+  // ── TOC accordion toggle ─────────────────────────────────────────────────
+  // Called from inline onclick in buildTOC() HTML output.
+  function tocToggle(id) {
+    document.getElementById('sub-' + id).classList.toggle('open');
+    document.getElementById('arr-' + id).classList.toggle('open');
+  }
+
+  // ── TOC active-item tracking ───────────────────────────────────────────────
+  let _tocScrollHandler = null;
+
+  function setTocActive(id) {
+    const tocEl = document.getElementById('toc');
+    if (!tocEl) return;
+
+    // Clear active state except on recital grid buttons (managed by IntersectionObserver)
+    tocEl.querySelectorAll('.toc-active:not(.toc-rec-btn)').forEach(el => el.classList.remove('toc-active'));
+
+    const link = tocEl.querySelector(`a[href="#${id}"]`);
+    if (!link) return;
+    link.classList.add('toc-active');
+
+    // Collect all ancestor .toc-sub elements (empty set for flat links)
+    const ancestorSubs = new Set();
+    if (!link.classList.contains('toc-flat-link')) {
+      let el = link.parentElement;
+      while (el && el !== tocEl) {
+        if (el.classList.contains('toc-sub')) ancestorSubs.add(el);
+        el = el.parentElement;
+      }
+    }
+
+    // Open ancestor accordions; close all non-ancestor ones
+    // (for flat links ancestorSubs is empty, so all accordions close)
+    tocEl.querySelectorAll('.toc-sub[id]').forEach(sub => {
+      const subId = sub.id.replace('sub-', '');
+      if (ancestorSubs.has(sub)) {
+        if (!sub.classList.contains('open')) {
+          sub.classList.add('open');
+          document.getElementById('arr-' + subId)?.classList.add('open');
+        }
+      } else if (sub.classList.contains('open')) {
+        sub.classList.remove('open');
+        document.getElementById('arr-' + subId)?.classList.remove('open');
+      }
+    });
+
+    if (!link.classList.contains('toc-flat-link')) {
+      link.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function initTocHighlight() {
+    if (_tocScrollHandler) {
+      document.getElementById('document')?.removeEventListener('scroll', _tocScrollHandler);
+      _tocScrollHandler = null;
+    }
+
+    const docEl = document.getElementById('document');
+    const tocEl = document.getElementById('toc');
+    if (!docEl || !tocEl) return;
+
+    const allSections = [...docEl.querySelectorAll(
+      '#doc-overview, section[id^="article-"], section[id^="annex-"], div[id^="recital-"], #sec-footnotes'
+    )];
+    if (!allSections.length) return;
+
+    let rafPending = false;
+    let lastActiveId = null;
+
+    function update() {
+      rafPending = false;
+      let activeId = null;
+      const containerTop = scrollEl.getBoundingClientRect().top;
+      const threshold    = containerTop + scrollEl.clientHeight * 0.35;
+      for (const s of allSections) {
+        if (s.getBoundingClientRect().top <= threshold) activeId = s.id;
+      }
+      if (!activeId) activeId = allSections[0].id;
+      if (activeId === lastActiveId) return;
+      lastActiveId = activeId;
+      setTocActive(activeId);
+    }
+
+    const scrollEl = docEl;
+
+    _tocScrollHandler = () => {
+      if (!rafPending) {
+        rafPending = true;
+        requestAnimationFrame(update);
+      }
+    };
+
+    scrollEl.addEventListener('scroll', _tocScrollHandler, { passive: true });
+    update();
+
+    // ── Recital grid: highlight buttons for recitals currently in the viewport ──
+    const recitalEls = [...docEl.querySelectorAll('div[id^="recital-"]')];
+    if (recitalEls.length && typeof IntersectionObserver !== 'undefined') {
+      const recObserver = new IntersectionObserver(entries => {
+        const tocEl2 = document.getElementById('toc');
+        if (!tocEl2) return;
+        for (const entry of entries) {
+          const n = entry.target.id.replace('recital-', '');
+          const btn = tocEl2.querySelector(`.toc-rec-btn[href="#recital-${n}"]`);
+          if (btn) btn.classList.toggle('toc-active', entry.isIntersecting);
+        }
+      }, { root: scrollEl, threshold: 0 });
+      for (const el of recitalEls) recObserver.observe(el);
+    }
+  }
+
+  // ── Peek Tray ──────────────────────────────────────────────────────────────
+  // Desktop: hover chip appears on .int-link; click chip or ⌘/Ctrl+click link → tray.
+  // Mobile:  tap .int-link → choice popover ("Go to" / "Peek in sidebar").
+  // Links inside the tray navigate within the tray.
+
+  // .int-link used to be an in-page hash anchor (#article-6) for every
+  // document. refHref() in src/lib/urls.ts now sends the AI Act's own
+  // cross-references to their object page instead (/article/6/, or
+  // /{lang}/article/6/ off English) so those permalinks carry the site's
+  // search rankings — see "object pages, not scrolling" in the project docs.
+  // Other documents (Digital Omnibus, Scientific Panel, Proceedings) have no
+  // object pages, so their self-references are still #article-6. The peek
+  // chip, ⌘/Ctrl+click and mobile tap menu all recognise a hoverable link by
+  // parsing its href, so they need to accept both shapes.
+  function _intLinkRef(href) {
+    href = href || '';
+    let m = href.match(/^#(article|annex|recital)-(\d+[a-z]?)$/i);
+    if (m) return { type: m[1], num: m[2] };
+    m = href.match(/^(?:\/[a-z]{2})?\/(article|annex|recital)\/(\d+[a-z]?)\/?$/i);
+    return m ? { type: m[1], num: m[2] } : null;
+  }
+
+  // Tray width bounds (desktop). The main content's padding-right tracks the
+  // actual width via the --peek-tray-w CSS variable, so narrowing the tray
+  // always reveals the content behind it.
+  // PEEK_TRAY_MIN_W must match the fixed padding-right of body.peek-open .document
+  // in shared.css — the content reserves exactly this width, so the tray can widen
+  // over the gutter without reflowing the content.
+  const PEEK_TRAY_MIN_W = 360;
+  function peekTrayMaxW() { return Math.min(680, Math.round(window.innerWidth * 0.65)); }
+  function clampPeekTrayW(w) { return Math.max(PEEK_TRAY_MIN_W, Math.min(peekTrayMaxW(), w)); }
+  function setPeekTrayWidth(w) {
+    const tray = document.getElementById('peek-tray');
+    if (tray) tray.style.width = w + 'px';
+    // Mirror to a CSS var so the floating Overview button stays centred in the
+    // visible content column (see .back-to-overview-btn).
+    document.documentElement.style.setProperty('--peek-tray-w', w + 'px');
+  }
+
+  function initPeekTray() {
+    if (document.getElementById('peek-tray')) return;
+
+    const isMac   = /mac/i.test(navigator.platform);
+    const modKey  = isMac ? '⌘' : 'Ctrl';
+    const isTouch = () => window.matchMedia('(pointer: coarse)').matches;
+
+    // ── Tray panel ───────────────────────────────────────────────────────
+    const tray = document.createElement('div');
+    tray.id = 'peek-tray';
+    tray.className = 'peek-tray';
+    tray.innerHTML =
+      `<div class="peek-tray-header">
+         <span class="peek-tray-label" id="peek-tray-label"></span>
+         <a class="open-page-btn peek-tray-open" id="peek-tray-ext" target="_blank" title="${esc(chrome('openAsPage'))}"><i class="fas fa-external-link-alt"></i> ${esc(chrome('openAsPage'))}</a>
+         <button class="copy-url-btn peek-tray-copy" id="peek-tray-copy" title="Copy link"><i class="fas fa-link"></i></button>
+         <div class="peek-tray-actions">
+           <button class="peek-tray-minimize" title="Minimise to tab"><i class="fas fa-chevron-right"></i></button>
+           <button class="peek-tray-close" onclick="closePeekTray()" title="Close (Esc)"><i class="fas fa-times"></i></button>
+         </div>
+       </div>
+       <div class="peek-tray-body weglot-ignore" id="peek-tray-body"></div>
+       <div class="peek-tray-tab">
+         <button class="peek-tray-expand" title="Expand peek"><i class="fas fa-chevron-left"></i></button>
+         <span class="peek-tray-tab-label" id="peek-tray-tab-label"></span>
+       </div>`;
+    document.body.appendChild(tray);
+
+    // ── Minimize to right-edge tab (desktop + mobile) ────────────────────
+    // When minimized the content reclaims the gutter (body.peek-min) and the
+    // floating Overview button re-centres (--peek-tray-w → 0).
+    tray.querySelector('.peek-tray-minimize').addEventListener('click', () => {
+      tray.classList.add('minimized');
+      document.body.classList.add('peek-min');
+      document.documentElement.style.setProperty('--peek-tray-w', '0px');
+    });
+    tray.querySelector('.peek-tray-expand').addEventListener('click', () => {
+      tray.classList.remove('minimized');
+      document.body.classList.remove('peek-min');
+      document.documentElement.style.setProperty('--peek-tray-w', tray.offsetWidth + 'px');
+    });
+
+    // ── Drag-resize handle + snap controls (desktop only) ────────────────
+    if (!isTouch()) {
+      const resizeHandle = document.createElement('div');
+      resizeHandle.className = 'peek-tray-resize-handle';
+      tray.appendChild(resizeHandle);
+
+      resizeHandle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = tray.offsetWidth;
+        // Suppress width/padding transitions while dragging so the tray tracks the cursor.
+        document.body.classList.add('peek-resizing');
+        // mousemove fires faster than the display refreshes; applying the width on
+        // every event forces multiple layout passes per frame and makes the tray's
+        // content reflow visibly lag. Coalesce to one width update per animation
+        // frame so resize matches the smoothness of the snap buttons.
+        let pendingW = null, rafId = 0;
+        const flush = () => {
+          rafId = 0;
+          if (pendingW != null) setPeekTrayWidth(pendingW);
+        };
+        const onMove = e => {
+          pendingW = clampPeekTrayW(startW + (startX - e.clientX));
+          if (!rafId) rafId = requestAnimationFrame(flush);
+        };
+        const onUp = () => {
+          if (rafId) cancelAnimationFrame(rafId);
+          if (pendingW != null) setPeekTrayWidth(pendingW);
+          document.body.classList.remove('peek-resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+
+      // Snap controls: ◀ expands the tray to its widest, ▶ shrinks to narrowest.
+      const snap = document.createElement('div');
+      snap.className = 'peek-tray-snap';
+      snap.innerHTML =
+        `<button class="peek-tray-snap-btn peek-tray-snap-max" title="Expand to widest" aria-label="Expand peek to widest"><i class="fas fa-chevron-left"></i></button>
+         <button class="peek-tray-snap-btn peek-tray-snap-min" title="Shrink to narrowest" aria-label="Shrink peek to narrowest"><i class="fas fa-chevron-right"></i></button>`;
+      tray.appendChild(snap);
+      snap.querySelector('.peek-tray-snap-max').addEventListener('click', () => setPeekTrayWidth(peekTrayMaxW()));
+      snap.querySelector('.peek-tray-snap-min').addEventListener('click', () => setPeekTrayWidth(PEEK_TRAY_MIN_W));
+    }
+
+    // Int-links inside the tray navigate within the tray
+    tray.addEventListener('click', e => {
+      const link = _cl(e.target,'a.int-link');
+      if (!link) return;
+      const ref = _intLinkRef(link.getAttribute('href'));
+      if (!ref) return;
+      e.preventDefault();
+      openPeekTray(ref.type, ref.num);
+    });
+
+    // ── Desktop hover chip ───────────────────────────────────────────────
+    const chip = document.createElement('div');
+    chip.id = 'peek-chip';
+    chip.className = 'peek-chip';
+    chip.innerHTML =
+      `<button class="peek-chip-row peek-chip-scroll">
+         <i class="fas fa-arrow-down"></i>
+         <span class="peek-chip-action">Scroll to</span>
+         <span class="peek-chip-key">click</span>
+       </button>
+       <div class="peek-chip-divider"></div>
+       <button class="peek-chip-row peek-chip-peek">
+         <i class="fas fa-columns"></i>
+         <span class="peek-chip-action">Peek</span>
+         <span class="peek-chip-key">${modKey}+click</span>
+       </button>
+       <div class="peek-chip-divider"></div>
+       <button class="peek-chip-row peek-chip-open-page">
+         <i class="fas fa-external-link-alt"></i>
+         <span class="peek-chip-action">Open as page</span>
+       </button>`;
+    document.body.appendChild(chip);
+
+    let _hideTimer = null;
+    let _pending   = null;
+
+    function positionChip(link) {
+      const ref = _intLinkRef(link.getAttribute('href'));
+      if (!ref) return false;
+      _pending = ref;
+      const r = link.getBoundingClientRect();
+      chip.style.top  = `${r.bottom + 5}px`;
+      chip.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - 140))}px`;
+      return true;
+    }
+
+    document.addEventListener('mouseover', e => {
+      if (isTouch()) return;
+      const link = _cl(e.target,'a.int-link');
+      if (!link || _cl(e.target,'#peek-tray')) return;
+      clearTimeout(_hideTimer);
+      if (positionChip(link)) chip.classList.add('visible');
+    });
+    document.addEventListener('mouseout', e => {
+      if (!_cl(e.target,'a.int-link')) return;
+      _hideTimer = setTimeout(() => chip.classList.remove('visible'), 250);
+    });
+    chip.addEventListener('mouseenter', () => clearTimeout(_hideTimer));
+    chip.addEventListener('mouseleave', () => {
+      _hideTimer = setTimeout(() => chip.classList.remove('visible'), 250);
+    });
+    // "Open in side peek" buttons on article/annex/recital headings
+    document.addEventListener('click', e => {
+      const btn = _cl(e.target,'.open-peek-btn');
+      if (!btn) return;
+      const t = btn.dataset.peekType;
+      const n = btn.dataset.peekNum;
+      if (t && n) openPeekTray(t, n);
+    });
+
+    chip.querySelector('.peek-chip-scroll').addEventListener('click', () => {
+      chip.classList.remove('visible');
+      if (!_pending) return;
+      const el = document.getElementById(`${_pending.type}-${_pending.num}`);
+      if (el && typeof scrollToEl === 'function') {
+        scrollToEl(el);
+        history.pushState(null, '', `#${_pending.type}-${_pending.num}`);
+      } else {
+        location.hash = `#${_pending.type}-${_pending.num}`;
+      }
+    });
+    chip.querySelector('.peek-chip-peek').addEventListener('click', () => {
+      chip.classList.remove('visible');
+      if (_pending) openPeekTray(_pending.type, _pending.num);
+    });
+    chip.querySelector('.peek-chip-open-page').addEventListener('click', () => {
+      chip.classList.remove('visible');
+      if (_pending) window.open(itemUrl(_pending.type, _pending.num), '_blank');
+    });
+
+    document.addEventListener('scroll', () => chip.classList.remove('visible'),
+      { passive: true, capture: true });
+
+    // ── ⌘/Ctrl+click → tray (desktop) ───────────────────────────────────
+    document.addEventListener('click', e => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      const link = _cl(e.target,'a.int-link');
+      if (!link || _cl(e.target,'#peek-tray')) return;
+      const ref = _intLinkRef(link.getAttribute('href'));
+      if (!ref) return;
+      e.preventDefault();
+      e.stopPropagation();
+      chip.classList.remove('visible');
+      openPeekTray(ref.type, ref.num);
+    }, true);
+
+    // ── Mobile tap menu ──────────────────────────────────────────────────
+    const tapMenu = document.createElement('div');
+    tapMenu.id = 'peek-tap-menu';
+    tapMenu.className = 'peek-tap-menu';
+    tapMenu.innerHTML =
+      `<button class="peek-tap-btn peek-tap-goto">
+         <i class="fas fa-arrow-right"></i>
+         <span>Go to <span id="peek-tap-dest"></span></span>
+       </button>
+       <div class="peek-tap-divider"></div>
+       <button class="peek-tap-btn peek-tap-peek">
+         <i class="fas fa-columns"></i>
+         <span>Peek in sidebar</span>
+       </button>
+       <div class="peek-tap-divider"></div>
+       <button class="peek-tap-btn peek-tap-open-page">
+         <i class="fas fa-external-link-alt"></i>
+         <span>Open as page</span>
+       </button>`;
+    document.body.appendChild(tapMenu);
+
+    let _tapTarget = null; // { type, num, href }
+
+    function showTapMenu(link) {
+      const ref = _intLinkRef(link.getAttribute('href'));
+      if (!ref) return false;
+      _tapTarget = { type: ref.type, num: ref.num, href: link.getAttribute('href') };
+      const lbl = localizedLabel[`${ref.type}-${ref.num}`]
+        || `${ref.type.charAt(0).toUpperCase() + ref.type.slice(1)} ${ref.num}`;
+      document.getElementById('peek-tap-dest').textContent = lbl;
+      const r = link.getBoundingClientRect();
+      const menuW = 190;
+      tapMenu.style.top  = `${Math.min(r.bottom + 6, window.innerHeight - 90)}px`;
+      tapMenu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - menuW - 8))}px`;
+      tapMenu.classList.add('visible');
+      return true;
+    }
+
+    function hideTapMenu() {
+      tapMenu.classList.remove('visible');
+      _tapTarget = null;
+    }
+
+    // Intercept taps on int-links (capture so it runs before navigation handlers)
+    document.addEventListener('click', e => {
+      if (!isTouch()) return;
+      // Tap outside menu → dismiss
+      if (tapMenu.classList.contains('visible') && !_cl(e.target,'#peek-tap-menu')) {
+        hideTapMenu();
+        return;
+      }
+      const link = _cl(e.target,'a.int-link');
+      if (!link || _cl(e.target,'#peek-tray')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (tapMenu.classList.contains('visible')) {
+        hideTapMenu();
+      } else {
+        showTapMenu(link);
+      }
+    }, true);
+
+    tapMenu.querySelector('.peek-tap-goto').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!_tapTarget) return;
+      const { type, num } = _tapTarget;
+      hideTapMenu();
+      // Trigger navigation the same way the desktop scroll chip does — the
+      // href may be an object-page path (/annex/1/) rather than an in-page
+      // hash, so the anchor id is always rebuilt from type/num, never read
+      // off href directly.
+      const anchor = `${type}-${num}`;
+      const target = document.getElementById(anchor);
+      if (target && typeof scrollToEl === 'function') {
+        scrollToEl(target);
+        history.pushState(null, '', `#${anchor}`);
+      } else {
+        location.hash = `#${anchor}`;
+      }
+    });
+
+    tapMenu.querySelector('.peek-tap-peek').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!_tapTarget) return;
+      const { type, num } = _tapTarget;
+      hideTapMenu();
+      openPeekTray(type, num);
+    });
+    tapMenu.querySelector('.peek-tap-open-page').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!_tapTarget) return;
+      const url = itemUrl(_tapTarget.type, _tapTarget.num);
+      hideTapMenu();
+      window.open(url, '_blank');
+    });
+
+    document.addEventListener('scroll', hideTapMenu,
+      { passive: true, capture: true });
+
+    // Escape closes tray or tap menu
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        if (tapMenu.classList.contains('visible')) hideTapMenu();
+        else closePeekTray();
+      }
+    });
+  }
+
+  function openPeekTray(type, num) {
+    const tray    = document.getElementById('peek-tray');
+    const bodyEl  = document.getElementById('peek-tray-body');
+    const labelEl = document.getElementById('peek-tray-label');
+    const extLink = document.getElementById('peek-tray-ext');
+    if (!tray) return;
+
+    // Header label
+    const lbl = localizedLabel[`${type}-${num}`]
+      || `${type.charAt(0).toUpperCase() + type.slice(1)} ${num}`;
+    labelEl.textContent = lbl;
+    const tabLabelEl = document.getElementById('peek-tray-tab-label');
+    if (tabLabelEl) tabLabelEl.textContent = lbl;
+    tray.classList.remove('minimized');
+
+    // Header action buttons
+    const extHref = typeof buildOpenPageUrl === 'function'
+      ? buildOpenPageUrl(type, num)
+      : `${langPrefix()}/single?type=${type}&num=${num}${docParam}`;
+    extLink.href = extHref;
+    const copyBtn = document.getElementById('peek-tray-copy');
+    if (copyBtn && typeof itemUrl === 'function') {
+      const _copyUrl = itemUrl(type, num);
+      copyBtn.onclick = () => copyItemUrl(copyBtn, _copyUrl);
+    }
+
+    // Render item
+    const blocks  = langCache[currentLang] || [];
+    const iblocks = blocks.filter(b => b.type === type && String(b.item_number) === String(num));
+    const prevContext = RS.renderContext;
+    if (iblocks.length) {
+      bodyEl.innerHTML =
+        `<div class="document-inner peek-document-inner">${renderItems(iblocks, type, { noHeadings: true })}</div>`;
+    } else {
+      bodyEl.innerHTML = `<p class="peek-empty">Content not found.</p>`;
+    }
+    RS.renderContext = prevContext;
+    bodyEl.scrollTop = 0;
+
+    tray.classList.add('open');
+    document.body.classList.add('peek-open');
+    document.body.classList.remove('peek-min');
+    document.documentElement.style.setProperty('--peek-tray-w', tray.offsetWidth + 'px');
+  }
+
+  function closePeekTray() {
+    const tray = document.getElementById('peek-tray');
+    if (tray) { tray.classList.remove('open'); tray.classList.remove('minimized'); }
+    document.body.classList.remove('peek-min');
+    document.documentElement.style.setProperty('--peek-tray-w', '0px');
+    if (!document.getElementById('xdoc-peek-tray')?.classList.contains('open')) {
+      document.body.classList.remove('peek-open');
+    }
+  }
+
+  // ── Cross-document peek (AI Act links from other doc pages) ──────────────────
+  // Renders through src/lib/renderer.ts (window.__renderPipeline), the same
+  // pipeline the static pages are built from — as the Code of Practice peek
+  // does. It replaced a render-state swap that saved eight globals, overwrote
+  // them and restored them, and that applied the Omnibus overlay only when the
+  // CURRENT document had one. Scientific Panel, Proceedings and Digital Omnibus
+  // all carry omnibus:false, so on every one of those pages an AI Act peek
+  // rendered the pre-Omnibus wording — most wrongly on the Digital Omnibus
+  // explorer itself, where the amending act showed the text it amends, unamended.
+
+  let _aiActPeekState = null;
+
+  async function openXDocPeekTray(url, label) {
+    const tray    = document.getElementById('xdoc-peek-tray');
+    const bodyEl  = document.getElementById('xdoc-tray-body');
+    const labelEl = document.getElementById('xdoc-tray-label');
+    const extLink = document.getElementById('xdoc-tray-ext');
+    if (!tray) return;
+
+    labelEl.textContent = label;
+    extLink.href = url;
+    bodyEl.innerHTML = '<div class="loading"><div class="loading-spinner"></div></div>';
+    tray.classList.add('open');
+    document.body.classList.add('peek-open');
+
+    const u    = new URL(url, location.href);
+    const type = u.searchParams.get('type');
+    // Not coerced: an article number may carry a letter ("75a").
+    const num  = u.searchParams.get('num');
+
+    try {
+      const pipeline = await renderPipeline();
+      // One AI Act EN state serves every peek on the page; `bare` drops the
+      // apparatus the panel has never shown (term tooltips, badges, related
+      // recitals), matching what the state swap used to set by hand.
+      _aiActPeekState ??= await pipeline.loadRenderState('ai_act', 'EN', { bare: true });
+      const st = _aiActPeekState;
+      const iblocks = st.blocks.filter(
+        b => b.type === type && String(b.item_number) === String(num));
+      if (!iblocks.length) {
+        bodyEl.innerHTML = '<p class="peek-empty">Content not found.</p>';
+        return;
+      }
+      st.fnRefCounter = {};
+      bodyEl.innerHTML = '<div class="document-inner peek-document-inner">' +
+        pipeline.renderItems(iblocks, type, st, { noHeadings: true }) + '</div>';
+      bodyEl.scrollTop = 0;
+    } catch (e) {
+      console.error('[xdoc-peek]', e);
+      bodyEl.innerHTML = '<p class="peek-empty">Could not load content.</p>';
+    }
+  }
+
+  function closeXDocPeekTray() {
+    const tray = document.getElementById('xdoc-peek-tray');
+    if (tray) tray.classList.remove('open');
+    if (!document.getElementById('peek-tray')?.classList.contains('open')) {
+      document.body.classList.remove('peek-open');
+    }
+  }
+
+  function initCrossDocPeek() {
+    if (document.getElementById('xdoc-peek-tray')) return;
+
+    const isMac   = /mac/i.test(navigator.platform);
+    const modKey  = isMac ? '⌘' : 'Ctrl';
+    const isTouch = () => window.matchMedia('(pointer: coarse)').matches;
+
+    // ── Tray ─────────────────────────────────────────────────────────────
+    const tray = document.createElement('div');
+    tray.id = 'xdoc-peek-tray';
+    tray.className = 'peek-tray';
+    tray.innerHTML =
+      `<div class="peek-tray-header">
+         <span class="peek-tray-label" id="xdoc-tray-label"></span>
+         <a class="open-page-btn peek-tray-open" id="xdoc-tray-ext" target="_blank" title="${esc(chrome('openAsPage'))}"><i class="fas fa-external-link-alt"></i> ${esc(chrome('openAsPage'))}</a>
+         <div class="peek-tray-actions">
+           <button class="peek-tray-close" onclick="closeXDocPeekTray()" title="Close (Esc)"><i class="fas fa-times"></i></button>
+         </div>
+       </div>
+       <div class="peek-tray-body xdoc-tray-body weglot-ignore" id="xdoc-tray-body"></div>`;
+    document.body.appendChild(tray);
+
+    // ── Desktop hover chip ────────────────────────────────────────────────
+    const chip = document.createElement('div');
+    chip.id = 'xdoc-peek-chip';
+    chip.className = 'peek-chip';
+    chip.innerHTML =
+      `<button class="peek-chip-row xdoc-chip-goto">
+         <i class="fas fa-arrow-right"></i>
+         <span class="peek-chip-action">Go to <span id="xdoc-chip-dest"></span></span>
+       </button>
+       <div class="peek-chip-divider"></div>
+       <button class="peek-chip-row xdoc-chip-peek">
+         <i class="fas fa-columns"></i>
+         <span class="peek-chip-action">Peek</span>
+         <span class="peek-chip-key">${modKey}+click</span>
+       </button>
+       <div class="peek-chip-divider"></div>
+       <button class="peek-chip-row xdoc-chip-open-page">
+         <i class="fas fa-external-link-alt"></i>
+         <span class="peek-chip-action">Open as page</span>
+       </button>`;
+    document.body.appendChild(chip);
+
+    let _pending  = null; // { url, label }
+    let _hideTimer;
+
+    function parseXdocLink(link) {
+      const href = link.getAttribute('href') || '';
+      try {
+        const u    = new URL(href, location.href);
+        const type = u.searchParams.get('type') || '';
+        const num  = u.searchParams.get('num')  || '';
+        if (!type || !num) return null;
+        const label = `${type.charAt(0).toUpperCase() + type.slice(1)} ${num}`;
+        return { url: href, label };
+      } catch { return null; }
+    }
+
+    function positionChip(link) {
+      const parsed = parseXdocLink(link);
+      if (!parsed) return false;
+      _pending = parsed;
+      document.getElementById('xdoc-chip-dest').textContent = parsed.label;
+      const r = link.getBoundingClientRect();
+      chip.style.top  = `${r.bottom + 5}px`;
+      chip.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - 160))}px`;
+      return true;
+    }
+
+    document.addEventListener('mouseover', e => {
+      if (isTouch()) return;
+      const link = _cl(e.target,'a.ai-act-xref');
+      if (!link || _cl(e.target,'#xdoc-peek-tray')) return;
+      clearTimeout(_hideTimer);
+      if (positionChip(link)) chip.classList.add('visible');
+    });
+    document.addEventListener('mouseout', e => {
+      if (!_cl(e.target,'a.ai-act-xref')) return;
+      _hideTimer = setTimeout(() => chip.classList.remove('visible'), 250);
+    });
+    chip.addEventListener('mouseenter', () => clearTimeout(_hideTimer));
+    chip.addEventListener('mouseleave', () => {
+      _hideTimer = setTimeout(() => chip.classList.remove('visible'), 250);
+    });
+
+    chip.querySelector('.xdoc-chip-goto').addEventListener('click', () => {
+      chip.classList.remove('visible');
+      if (_pending) location.href = _pending.url;
+    });
+    chip.querySelector('.xdoc-chip-peek').addEventListener('click', () => {
+      chip.classList.remove('visible');
+      if (_pending) openXDocPeekTray(_pending.url, _pending.label);
+    });
+    chip.querySelector('.xdoc-chip-open-page').addEventListener('click', () => {
+      chip.classList.remove('visible');
+      if (_pending) window.open(_pending.url, '_blank');
+    });
+
+    document.addEventListener('scroll', () => chip.classList.remove('visible'),
+      { passive: true, capture: true });
+
+    // ⌘/Ctrl+click → tray
+    document.addEventListener('click', e => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      const link = _cl(e.target,'a.ai-act-xref');
+      if (!link || _cl(e.target,'#xdoc-peek-tray')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      chip.classList.remove('visible');
+      const parsed = parseXdocLink(link);
+      if (parsed) openXDocPeekTray(parsed.url, parsed.label);
+    }, true);
+
+    // ── Mobile tap menu ───────────────────────────────────────────────────
+    const tapMenu = document.createElement('div');
+    tapMenu.id = 'xdoc-tap-menu';
+    tapMenu.className = 'peek-tap-menu';
+    tapMenu.innerHTML =
+      `<button class="peek-tap-btn xdoc-tap-goto">
+         <i class="fas fa-arrow-right"></i>
+         <span>Go to <span id="xdoc-tap-dest"></span></span>
+       </button>
+       <div class="peek-tap-divider"></div>
+       <button class="peek-tap-btn xdoc-tap-peek">
+         <i class="fas fa-columns"></i>
+         <span>Peek in sidebar</span>
+       </button>
+       <div class="peek-tap-divider"></div>
+       <button class="peek-tap-btn xdoc-tap-open-page">
+         <i class="fas fa-external-link-alt"></i>
+         <span>Open as page</span>
+       </button>`;
+    document.body.appendChild(tapMenu);
+
+    let _tapTarget = null;
+
+    function showXDocTapMenu(link) {
+      const parsed = parseXdocLink(link);
+      if (!parsed) return false;
+      _tapTarget = parsed;
+      document.getElementById('xdoc-tap-dest').textContent = parsed.label;
+      const r = link.getBoundingClientRect();
+      tapMenu.style.top  = `${Math.min(r.bottom + 6, window.innerHeight - 90)}px`;
+      tapMenu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 198))}px`;
+      tapMenu.classList.add('visible');
+      return true;
+    }
+
+    function hideXDocTapMenu() {
+      tapMenu.classList.remove('visible');
+      _tapTarget = null;
+    }
+
+    document.addEventListener('click', e => {
+      if (!isTouch()) return;
+      if (tapMenu.classList.contains('visible') && !_cl(e.target,'#xdoc-tap-menu')) {
+        hideXDocTapMenu(); return;
+      }
+      const link = _cl(e.target,'a.ai-act-xref');
+      if (!link || _cl(e.target,'#xdoc-peek-tray')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (tapMenu.classList.contains('visible')) hideXDocTapMenu();
+      else showXDocTapMenu(link);
+    }, true);
+
+    tapMenu.querySelector('.xdoc-tap-goto').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!_tapTarget) return;
+      const url = _tapTarget.url;
+      hideXDocTapMenu();
+      location.href = url;
+    });
+    tapMenu.querySelector('.xdoc-tap-peek').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!_tapTarget) return;
+      const { url, label } = _tapTarget;
+      hideXDocTapMenu();
+      openXDocPeekTray(url, label);
+    });
+    tapMenu.querySelector('.xdoc-tap-open-page').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!_tapTarget) return;
+      const url = _tapTarget.url;
+      hideXDocTapMenu();
+      window.open(url, '_blank');
+    });
+
+    document.addEventListener('scroll', hideXDocTapMenu,
+      { passive: true, capture: true });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !document.getElementById('peek-tray')?.classList.contains('open')) {
+        if (tapMenu.classList.contains('visible')) hideXDocTapMenu();
+        else closeXDocPeekTray();
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', initCrossDocPeek);
+
+  // ── Back-to-overview floating button ─────────────────────────────────────────
+  function initBackToOverview() {
+    const docEl = document.getElementById('document');
+    if (!docEl || document.getElementById('back-to-overview-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'back-to-overview-btn';
+    btn.className = 'back-to-overview-btn';
+    btn.innerHTML = '<i class="fas fa-arrow-up"></i> Overview';
+    btn.setAttribute('title', 'Back to overview');
+    document.body.appendChild(btn);
+
+    btn.addEventListener('click', () => {
+      docEl.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    function update() {
+      const overview = document.getElementById('doc-overview');
+      if (!overview) { btn.classList.remove('visible'); return; }
+      // Show once the overview's bottom edge has scrolled above the fixed header area
+      const headerH = (document.querySelector('.site-header')?.offsetHeight || 0)
+                    + (document.querySelector('.header')?.offsetHeight    || 0);
+      btn.classList.toggle('visible', overview.getBoundingClientRect().bottom < headerH);
+    }
+
+    docEl.addEventListener('scroll', update, { passive: true });
+  }
+
+  document.addEventListener('DOMContentLoaded', initBackToOverview);
+
+
+
+  // ── Paragraph action sheet (touch only) ──────────────────────────────────
+  // The rail beside each paragraph is the right design on a pointer device:
+  // hovering happens as a side effect of reading, so the reveal is free and
+  // lands exactly on attention. Touch has no equivalent — a tap is deliberate,
+  // and nobody taps body text while reading, so the rail went undiscovered
+  // while still costing 89px of a 357px line (148px with an Omnibus badge).
+  // That is why mobile body text renders at 24–33 characters where 45–75 is
+  // readable. On touch the rail is hidden (shared.css) and its actions move
+  // here, into a sheet raised by tapping the paragraph.
+  //
+  // The sheet does not reimplement any action: it mirrors the paragraph's own
+  // rail buttons, using each button's title as the row label and dispatching a
+  // click on the original. So the rail stays the single source of truth for
+  // what actions exist and what they are called in each of the 24 languages —
+  // a new rail button appears here for free, with no new i18n keys.
+  //
+  // PARKED IDEA (2026-08-26), if first discovery proves too rare to rely on a
+  // bare tap: surface a "⋯" at the right edge of whichever paragraph is
+  // centred in the viewport, moving with the scroll. It borrows hover's real
+  // virtue — it fires as a side effect of reading rather than as a deliberate
+  // act — while costing one glyph instead of the whole rail. A second fallback
+  // is to make that "⋯" resident on every paragraph. Measure before choosing:
+  // both trade line width back for discovery.
+  function initParaSheet() {
+    const isTouch = () => window.matchMedia('(hover: none)').matches;
+
+    let sheet = null, scrim = null;
+    let sourceRows = [];        // every row of the provision the sheet belongs to
+    let lastFocus = null;
+
+    // A tap is a click that did not travel and did not linger. Anything else is
+    // a scroll or the start of a text selection, and must not raise the sheet.
+    const TAP_SLOP_PX = 10;
+    const TAP_MAX_MS  = 500;
+    let down = null;
+
+    // Things inside a paragraph that own their own tap: cross-references, term
+    // tooltips, footnote markers, and the rail buttons themselves (hidden on
+    // touch, but present in the DOM and still reachable by a keyboard).
+    const OWN_TAP = 'a, button, sup, .term-ref, [onclick]';
+
+    function build() {
+      scrim = document.createElement('div');
+      scrim.className = 'para-sheet-scrim';
+      scrim.hidden = true;
+      scrim.addEventListener('click', close);
+
+      sheet = document.createElement('div');
+      sheet.className = 'para-sheet';
+      sheet.hidden = true;
+      sheet.setAttribute('role', 'dialog');
+      sheet.setAttribute('aria-modal', 'true');
+      sheet.setAttribute('aria-labelledby', 'paraSheetCite');
+      sheet.tabIndex = -1;
+      sheet.innerHTML =
+        '<div class="para-sheet-grab"></div>' +
+        '<div class="para-sheet-head">' +
+          '<div class="para-sheet-headings">' +
+            '<p class="para-sheet-cite weglot-ignore" id="paraSheetCite"></p>' +
+            '<p class="para-sheet-subtitle weglot-ignore"></p>' +
+          '</div>' +
+          '<button type="button" class="para-sheet-close" aria-label="Close">' +
+            '<i class="fas fa-times"></i></button>' +
+        '</div>' +
+        '<ul class="para-sheet-actions"></ul>';
+      sheet.querySelector('.para-sheet-close').addEventListener('click', close);
+
+      document.body.appendChild(scrim);
+      document.body.appendChild(sheet);
+    }
+
+    // "Article 6(1)(a)". The ask button already carries exactly this string
+    // (paraRefLabel), localized; where it is absent — the assistant is scoped
+    // to the AI Act, so other documents render no ask button — fall back to the
+    // enclosing heading plus the paragraph's own label.
+    function citationFor(el) {
+      // A heading names itself — "Article 38", "Recital 12".
+      const own = el.querySelector(':scope > .heading-label, :scope > .recital-header-label');
+      if (own) return own.textContent.trim();
+      const ask = railFor(el).querySelector('.ask-ai-btn');
+      if (ask && ask.dataset.askLabel) return ask.dataset.askLabel;
+      const sec = el.closest('section, .recital-block');
+      const head = sec && sec.querySelector('.heading-label, .recital-header-label');
+      const lbl = (el.querySelector('.para-label')?.textContent || '').trim();
+      return [head ? head.textContent.trim() : '', lbl].filter(Boolean).join(' ');
+    }
+
+    // An article's title, shown under its number. Paragraphs have none — their
+    // citation already reads as the whole reference.
+    function subtitleFor(el) {
+      const t = el.querySelector(':scope > .heading-title');
+      return t ? t.textContent.replace(/^\s*[:\u2014-]\s*/, '').trim() : '';
+    }
+
+    function iconClassOf(btn) {
+      const i = btn.querySelector('i.fas, i.far, i.fab');
+      if (i) return i.className;
+      // The Omnibus marker is a word, not an icon — it only grows one
+      // (OM_RESET_ICON) once toggled on. A row needs one either way.
+      if (btn.classList.contains('om-toggle')) return 'fas fa-history';
+      return 'fas fa-circle';
+    }
+
+    // Prose the rail never needed, because there the single word sat next to the
+    // paragraph and the coloured rule carried the rest of the meaning. As a row
+    // in a sheet, "original" does not say original *of what*, or in which
+    // direction the tap goes.
+    //
+    // ⚠ ENGLISH ONLY, DELIBERATELY. Every other string in this sheet is either
+    // already translated (UI_CHROME, via the rail buttons' own titles) or is a
+    // proper noun or a date that Intl localizes. These two are new prose, and
+    // this is a legal reference tool — inventing 23 translations of a sentence
+    // about amendment status is not something to guess at. Non-EN readers keep
+    // the existing localized single word, which is terse but correct, until a
+    // translator fills the rest in. Add languages here, not to UI_CHROME: these
+    // never reach renderer.ts's output, so they carry no SYNC obligation.
+    const SHEET_PROSE = {
+      EN: { showOriginal: 'See the original wording before this amendment',
+            showCurrent:  'Back to the wording in force' },
+    };
+    function prose(key) {
+      return (SHEET_PROSE[(currentLang || 'EN').toUpperCase()] || {})[key] || '';
+    }
+
+    // The Omnibus control is a state marker that doubles as a toggle. As a row
+    // it should say what tapping it does, which is the toggle's *other* label.
+    function labelOf(btn) {
+      if (btn.classList.contains('om-toggle')) {
+        const showingOld = btn.getAttribute('aria-expanded') === 'true';
+        const p = prose(showingOld ? 'showCurrent' : 'showOriginal');
+        if (p) return { text: p, localized: false };
+        return { text: showingOld ? (btn.dataset.omOff || '') : (btn.dataset.omOn || ''),
+                 localized: true };
+      }
+      const text = btn.getAttribute('title') || btn.getAttribute('aria-label') || '';
+      // Every rail title comes from UI_CHROME and is already in the page
+      // language — except the copy button's, which makeCopyUrlBtn() hardcodes in
+      // English. That one wants Weglot; the rest must be shielded from it.
+      return { text, localized: !btn.classList.contains('copy-url-btn') };
+    }
+
+    // "Digital Omnibus on AI · 27 July 2026" — which act changed this provision
+    // and when it took effect. Both halves localize without new strings: the
+    // short title comes from the amending act's own Official Journal title in
+    // each language, and the date goes through Intl, which knows each locale's
+    // date grammar. `in_force` is a property of the instrument, so it is the
+    // same date for every amended provision.
+    // The amending act's identity is NOT in the page. On a statically rendered
+    // explorer the Omnibus overlay was applied at build time, so index-page.js
+    // never runs the render path that populates `omnibusMap` and amenderShort()
+    // returns ''. Fetched once instead, and only on a page that actually shows
+    // an amendment — kicked off at init rather than on first tap, so the hint
+    // is present when the sheet opens instead of appearing a beat later.
+    let _amender = null;
+    function primeAmender() {
+      if (typeof omnibusMap !== 'undefined' && omnibusMap && omnibusMap.amender) {
+        _amender = omnibusMap.amender;                    // client-rendered pages
+        return;
+      }
+      if (!document.querySelector('.om-toggle')) return;  // nothing to explain
+      // Through the shared memo: loadRenderState() wants this same file, and on
+      // a static page it asks a moment later. One request serves both.
+      jsonOnce(`${dataDir}/omnibus_map.json`)
+        .then(m => { _amender = m && m.amender; })
+        .catch(() => {});   // the chip still says what happened; only the hint is lost
+    }
+
+    function amendmentHint() {
+      const a = _amender;
+      if (!a) return '';
+      const lang = (currentLang || 'EN').toUpperCase();
+      const name = (a.short_titles || {})[lang] || a.short || '';
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(a.in_force || '');
+      let when = '';
+      if (m) {
+        try {
+          // en-GB, not en: EU legal texts write "27 July 2026", not US order.
+          const loc = (currentLang || 'EN').toUpperCase() === 'EN'
+            ? 'en-GB' : (currentLang || 'en').toLowerCase();
+          when = new Intl.DateTimeFormat(loc, {
+            day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+          }).format(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])));
+        } catch { when = a.in_force; }
+      }
+      return [name, when].filter(Boolean).join(' \u00b7 ');
+    }
+
+    // Every row of one provision shares an id: Article 2(3) is three .para rows
+    // with id="p-article-2-3", and only the FIRST carries a rail — the compare,
+    // ask and copy buttons are rendered for sub_paragraph_order === 1 alone,
+    // because one provision needs one set of controls, not one per run-on
+    // paragraph. So a tap on a continuation row has to borrow the first row's
+    // rail; without this the sheet found no actions and silently refused to
+    // open, which read as "this paragraph isn't tappable".
+    function provisionRows(el) {
+      if (!el.classList.contains('para') || !el.id) return [el];
+      return [...document.querySelectorAll('.para')].filter(p => p.id === el.id);
+    }
+    // Every control the sheet can offer, wherever it lives. Article headings
+    // hold theirs as direct children, recitals in .recital-header-actions,
+    // paragraphs in .para-actions — one selector covers all three.
+    const ACTION_SEL =
+      '.open-page-btn, .open-peek-btn, .ask-ai-btn, .copy-url-btn, .cmp-btn, .om-toggle';
+    // The element whose controls the sheet mirrors. For a paragraph that is the
+    // first row of the provision (see provisionRows); for a heading it is the
+    // heading itself.
+    function railFor(el) {
+      if (!el.classList.contains('para')) return el;
+      return provisionRows(el).find(p => p.querySelector(ACTION_SEL)) || el;
+    }
+    function actionsIn(el) {
+      return [...railFor(el).querySelectorAll(ACTION_SEL)];
+    }
+
+    function buildActions(para) {
+      const list = sheet.querySelector('.para-sheet-actions');
+      list.innerHTML = '';
+      // Rail order puts the Omnibus marker first, because there it doubles as a
+      // status badge and the badge belongs beside the text. In the sheet the
+      // status is spelled out in the header, so the toggle is just the most
+      // situational action and goes last.
+      const btns = actionsIn(para)
+        .sort((a, b) => a.classList.contains('om-toggle') - b.classList.contains('om-toggle'));
+      btns.forEach(btn => {
+        const { text, localized } = labelOf(btn);
+        if (!text) return;
+        const li  = document.createElement('li');
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'para-sheet-action';
+        row.innerHTML = `<i class="para-sheet-icon ${iconClassOf(btn)}"></i>` +
+                        `<span class="para-sheet-action-label${localized ? ' weglot-ignore' : ''}"></span>`;
+        row.querySelector('.para-sheet-action-label').textContent = text;
+        row.addEventListener('click', () => runAction(btn, row));
+        li.appendChild(row);
+        list.appendChild(li);
+      });
+      return list.children.length;
+    }
+
+    // Copy writes its confirmation into the rail button it was dispatched on,
+    // which is display:none here — so the sheet has to show that it landed, and
+    // stays up just long enough to be read.
+    function runAction(btn, row) {
+      const isCopy = btn.classList.contains('copy-url-btn');
+      btn.click();
+      if (!isCopy) { close(); return; }
+      row.classList.add('done');
+      row.querySelector('.para-sheet-icon').className = 'para-sheet-icon fas fa-check';
+      setTimeout(close, 900);
+    }
+
+    function open(para) {
+      if (!sheet) build();
+      // Localized already — see the .para-sheet note in ExplorerLayout.astro.
+      // The citation is built from UI_CHROME labels and the subtitle is the
+      // article's own title in the page language.
+      sheet.querySelector('.para-sheet-cite').textContent = citationFor(para);
+      const sub = sheet.querySelector('.para-sheet-subtitle');
+      sub.textContent = subtitleFor(para);
+      sub.hidden = !sub.textContent;
+
+      // Status replaces the rail's 55px badge. The colour rule on the paragraph
+      // survives on touch, but a colour cannot say which operation applied.
+      sheet.querySelector('.para-sheet-statusrow')?.remove();
+      const railRow = railFor(para);
+      const om = railRow.querySelector('.om-toggle');
+      if (om) {
+        const row = document.createElement('p');
+        row.className = 'para-sheet-statusrow';
+        const chip = document.createElement('span');
+        chip.className = 'para-sheet-status weglot-ignore';
+        chip.dataset.omOp = railRow.dataset.omOp || para.dataset.omOp || 'replace';
+        chip.textContent = om.dataset.omOff || '';
+        row.appendChild(chip);
+        const hint = amendmentHint();
+        if (hint) {
+          const h = document.createElement('span');
+          h.className = 'para-sheet-hint weglot-ignore';
+          h.textContent = hint;
+          row.appendChild(h);
+        }
+        sheet.querySelector('.para-sheet-headings').appendChild(row);
+      }
+
+      if (!buildActions(para)) return;   // nothing to offer — leave the tap inert
+
+      lastFocus = document.activeElement;
+      // The citation says "Article 2(3)", which is all three rows — so light
+      // all three, not only the one the finger landed on.
+      sourceRows = provisionRows(para);
+      sourceRows.forEach(p => p.classList.add('para-sheet-source'));
+      scrim.hidden = false;
+      sheet.hidden  = false;
+      document.body.classList.add('para-sheet-open');
+      // Two frames: the first commits the un-hidden element at its start
+      // transform, the second animates it. One frame is enough in Chrome and
+      // not in Safari, which is where this runs.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        scrim.classList.add('open');
+        sheet.classList.add('open');
+        revealSource(para);
+      }));
+      sheet.focus({ preventScroll: true });
+    }
+
+    // The sheet covers the lower third of the screen, which is often exactly
+    // where the tapped paragraph was.
+    function revealSource(para) {
+      const scroller = document.getElementById('document');
+      if (!scroller) return;
+      // A paragraph split into multiple rows — a run-on continuation, or a
+      // Digital Omnibus insert/insert_item whose continuation row lands
+      // AFTER the paragraph's own nested (a)/(b)/(i)/(ii) sub-points rather
+      // than next to it — reads as one citation but can span a long way down
+      // the page. Which row was actually tapped isn't a reliable anchor, so
+      // pin the whole thing by its first row instead, the same way the
+      // citation itself is always named after that row's paragraph_id.
+      if (sourceRows.length > 1) {
+        sourceRows[0].scrollIntoView({ block: 'start', behavior: 'smooth' });
+        return;
+      }
+      // A single-row paragraph only needs to move if the sheet would cover
+      // it — scroll by the overlap so a paragraph already in the clear does
+      // not move at all.
+      // The sheet's own rect is useless here: this runs while it is still
+      // transformed off-screen, so it would read as "no overlap" every time.
+      // Its LAYOUT height gives the position it is animating towards.
+      const sheetTop = window.innerHeight - sheet.offsetHeight;
+      const overlap = para.getBoundingClientRect().bottom - (sheetTop - 8);
+      if (overlap > 0) scroller.scrollBy({ top: overlap, behavior: 'smooth' });
+    }
+
+    function close() {
+      if (!sheet || sheet.hidden) return;
+      sheet.classList.remove('open');
+      scrim.classList.remove('open');
+      sourceRows.forEach(p => p.classList.remove('para-sheet-source'));
+      sourceRows = [];
+      document.body.classList.remove('para-sheet-open');
+      const done = () => { sheet.hidden = true; scrim.hidden = true; };
+      setTimeout(done, 240);
+      lastFocus?.focus?.({ preventScroll: true });
+      lastFocus = null;
+    }
+
+    // Headings are the teaching surface. A tap on body text is a deliberate act
+    // nobody performs while reading, so the paragraph sheet is only ever found
+    // by accident — but every reader passes an article heading before reaching
+    // its paragraphs, and a heading has room for a visible control where a line
+    // of body text does not. One "⋯" here advertises the whole idiom, and a
+    // reader who has used it once tries the same tap on a paragraph.
+    //
+    // "⋯" rather than a word because it needs no translation and is already the
+    // convention for "more actions"; the accessible name carries the provision
+    // it belongs to, which IS localized.
+    //
+    // Injected at runtime rather than rendered, so renderer.ts and its parity
+    // and golden tests stay out of this entirely.
+    const HEADING_SEL = '#document .item-heading, #document .recital-header';
+    function injectTriggers() {
+      document.querySelectorAll(HEADING_SEL).forEach(head => {
+        if (head.querySelector(':scope > .para-sheet-trigger')) return;
+        // One control is not worth hiding behind another: object pages carry a
+        // lone copy button, and there the heading is left exactly as it was.
+        if (actionsIn(head).length < 2) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'para-sheet-trigger';
+        btn.setAttribute('aria-haspopup', 'dialog');
+        btn.setAttribute('aria-label', citationFor(head));
+        btn.innerHTML = '<i class="fas fa-ellipsis-h"></i>';
+        btn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          open(head);
+        });
+        head.appendChild(btn);
+      });
+    }
+
+    document.addEventListener('pointerdown', e => {
+      down = { x: e.clientX, y: e.clientY, t: Date.now() };
+    }, true);
+
+    document.addEventListener('click', e => {
+      if (!isTouch()) return;
+      const para = _cl(e.target, '.para, .item-heading, .recital-header');
+      if (!para) return;
+      // Headings outside the document (peek tray, comparison modal) are chrome.
+      if (!para.classList.contains('para') && !_cl(e.target, '#document')) return;
+      // Peek trays and the comparison modal render paragraphs of their own;
+      // the sheet belongs to the document being read.
+      if (_cl(e.target, '.peek-tray, #cmpOverlay, .para-sheet')) return;
+      if (_cl(e.target, OWN_TAP)) return;
+      // A tap that selected text was a selection, not a request for actions.
+      if (!(window.getSelection()?.isCollapsed ?? true)) return;
+      if (down) {
+        if (Date.now() - down.t > TAP_MAX_MS) return;
+        if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) return;
+      }
+      open(para);
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') close();
+    });
+
+    primeAmender();
+    if (isTouch()) injectTriggers();
+  }
+
+  document.addEventListener('DOMContentLoaded', initParaSheet);

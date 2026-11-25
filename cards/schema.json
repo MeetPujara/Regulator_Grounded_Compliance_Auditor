@@ -1,0 +1,42 @@
+{
+  "id": "string, unique, e.g. US-ECOA-PROHIBITED",
+  "jurisdiction": [
+    "US",
+    "EU",
+    "IN"
+  ],
+  "clause": "string, exact place in the law",
+  "source_url": "string, official link (http...)",
+  "source_file": "list of glob patterns, resolved inside sources/",
+  "status": [
+    "binding_law",
+    "regulation",
+    "guidance",
+    "heuristic"
+  ],
+  "applies_to": [
+    "lending",
+    "employment",
+    "data_quality",
+    "governance",
+    "record_keeping"
+  ],
+  "effective_from": "YYYY-MM-DD or null (null = unknown, see to_verify)",
+  "obligation": "string, the rule in ONE sentence",
+  "caveat": "string, fine print we must not lose (may be empty)",
+  "test_type": [
+    "ratio_test",
+    "counterfactual",
+    "proxy_test",
+    "explanation_faithfulness",
+    "transparency",
+    "governance",
+    "record_keeping",
+    "data_quality",
+    "high_risk_classification"
+  ],
+  "threshold": "number or null",
+  "to_verify": "list of strings, things not double-checked (may be empty)",
+  "applicability_uncertain": "bool; true forces the label 'Needs human review'",
+  "retrieved_on": "YYYY-MM-DD, when the source file was saved"
+}

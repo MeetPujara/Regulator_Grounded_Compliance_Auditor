@@ -1,0 +1,28 @@
+{
+  "id": "EU-AIA-ART4A",
+  "jurisdiction": "EU",
+  "clause": "Article 4a, inserted by Regulation (EU) 2026/1744 (Digital Omnibus on AI)",
+  "source_url": "https://eur-lex.europa.eu/eli/reg/2026/1744/oj",
+  "source_file": [
+    "*2026_1744*",
+    "*2026*1744*"
+  ],
+  "status": "binding_law",
+  "applies_to": [
+    "lending",
+    "employment"
+  ],
+  "effective_from": "2026-07-27",
+  "obligation": "Providers of high-risk AI systems may exceptionally process special categories of personal data to detect and correct bias, under strict conditions including that the purpose cannot be met with synthetic or anonymised data.",
+  "caveat": "The Omnibus entered into force on 27 July 2026, but the application date of Article 4a itself is not confirmed. Our India-style columns are synthetic; this card does not authorise collecting real sensitive data.",
+  "test_type": [
+    "governance",
+    "data_quality"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "application date of Article 4a within the Omnibus"
+  ],
+  "applicability_uncertain": true,
+  "retrieved_on": "2026-11-24"
+}

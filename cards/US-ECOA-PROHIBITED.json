@@ -1,0 +1,28 @@
+{
+  "id": "US-ECOA-PROHIBITED",
+  "jurisdiction": "US",
+  "clause": "15 U.S.C. 1691(a), (b)(3)",
+  "source_url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title15-section1691",
+  "source_file": [
+    "*1691*",
+    "*ECOA*",
+    "*Scope*of*prohibition*"
+  ],
+  "status": "binding_law",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": null,
+  "obligation": "A creditor may not discriminate against an applicant on the basis of race, color, religion, national origin, sex, marital status, age, or receipt of public assistance income.",
+  "caveat": "Age may be used in an empirically derived, demonstrably and statistically sound scoring system, but an elderly applicant's age may never be given a negative value. Held copy is Cornell LII, not a .gov site.",
+  "test_type": [
+    "counterfactual",
+    "ratio_test"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "effective date (enacted 1974-10-28)"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

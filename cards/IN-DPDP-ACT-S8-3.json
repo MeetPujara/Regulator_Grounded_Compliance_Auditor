@@ -1,0 +1,27 @@
+{
+  "id": "IN-DPDP-ACT-S8-3",
+  "jurisdiction": "IN",
+  "clause": "Digital Personal Data Protection Act 2023 (Act 22 of 2023), section 8(3)",
+  "source_url": "https://www.meity.gov.in/data-protection-framework",
+  "source_file": [
+    "*2bf1f0e9f04e6fb4f8fef35e82c42aa5.pdf*"
+  ],
+  "status": "binding_law",
+  "applies_to": [
+    "lending",
+    "data_quality"
+  ],
+  "effective_from": null,
+  "obligation": "A data fiduciary must ensure that personal data used to make a decision affecting a data principal is complete, accurate and consistent.",
+  "caveat": "The Act has no anti-discrimination clause. Section 1(2) leaves commencement to a government notification, which we do not hold. One saved file named DPDP_Act.pdf is actually the Rules 2025.",
+  "test_type": [
+    "data_quality"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "commencement notification under section 1(2)",
+    "confirm which held file is the Act and which is the Rules"
+  ],
+  "applicability_uncertain": true,
+  "retrieved_on": "2026-11-24"
+}

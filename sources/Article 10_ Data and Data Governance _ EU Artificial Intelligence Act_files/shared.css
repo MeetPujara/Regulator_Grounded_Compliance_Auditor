@@ -1,0 +1,3497 @@
+/*
+ * shared.css — EU AI Act Explorer: global stylesheet
+ *
+ * Loaded by: index.html, single.html, cop-*.html
+ * CoP-specific styles live in cop.css (loaded in addition to this file).
+ *
+ * Structure (in order):
+ *   1.  Design tokens (:root variables — colours, typography, spacing, shadows)
+ *   2.  Reset (box-sizing, body base styles)
+ *   3.  Site header (logo + back link bar)
+ *   4.  Document nav header (tabs, language switcher, Implementing Acts dropdown)
+ *   5.  Layout (.layout flex container)
+ *   6.  TOC sidebar (doc-switcher, TOC items, sidebar search)
+ *   7.  Main document panel (.document)
+ *   8.  Document content (chapters, sections, articles, recitals, paragraphs)
+ *   9.  Footnotes + tooltips (fn-tip, fn-tip-float, term-ref, term-tip)
+ *   10. Article metadata badges
+ *   11. single.html-specific (breadcrumb, prev/next nav, view-in-context)
+ *   12. Loading spinner
+ *   13. Mobile TOC drawer overlay + FAB
+ *   14. Search modal (header search)
+ *   15. Responsive overrides (≤768px, ≤480px)
+ *   16. Peek tray (same-doc + cross-doc) + hover chip + mobile tap menu
+ *   17. Back-to-overview floating button
+ *   18. Anchor flash animation
+ *   19. Feedback toast
+ *
+ * Z-index hierarchy (higher = in front):
+ *   content (auto) < back-to-overview (250) < feedback toast/tab + mobile
+ *   TOC/search FABs (290, so an open peek tray covers them but a minimized
+ *   one — with nothing left in that corner — doesn't) < peek trays (300)
+ *   < search backdrop/tray (305/310) < desktop hover chip (400) < mobile tap menu (500)
+ *   < playlist panel (500) < comparison modal (1000)
+ *   < mobile TOC overlay (1199) < mobile TOC drawer (1200)
+ *
+ * Icon font: Font Awesome 5.15.4 (loaded via CDN in each HTML file).
+ *   IMPORTANT: FA6 does NOT work — use FA5 class names (fas/far/fab).
+ */
+
+/* The Google Fonts sheet is NOT imported here. A remote @import serialises the
+   download — the browser must fetch and parse shared.css before it even learns
+   the font CSS exists, then fetch that before the woff2 files. It is a
+   <link rel="preconnect"> + <link rel="stylesheet"> in ExplorerLayout.astro's
+   <head> instead, which starts both hops earlier and in parallel with this
+   file. Lighthouse attributed 0.135 of the page's 0.136 CLS to Source Serif 4
+   swapping in late under the old arrangement, shifting the LCP element. */
+
+/* ═══════════════════════════════════════════════════════════════════
+   Design tokens — all hardcoded values live here, nowhere else
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* ── Brand colours ──────────────────────── */
+  --brand:              #3b7bce;   /* links / interactive          */
+  --brand-light:        rgba(158,184,237,0.08); /* active bg       */
+  --brand-border:       rgba(12,113,195,0.09);  /* brand border    */
+  --blue-hl:            #dbeafe;   /* footnote highlight           */
+  --blue-hl-hover:      #bfdbfe;   /* footnote highlight hover     */
+
+  /* ── Text colours ───────────────────────── */
+  --heading:            #333333;   /* headings                     */
+  --ink:                #666666;   /* primary body text            */
+  --ink-2:              #555555;   /* secondary text               */
+  --ink-muted:          #888888;   /* muted / meta text            */
+  --ink-faint:          #aaaaaa;   /* placeholder / timestamps     */
+
+  /* ── Surface & border colours ───────────── */
+  --border:             #d3d3d3;   /* default border               */
+  --border-md:          #c0c0c0;   /* medium border (tooltips)     */
+
+  --surface:            #ffffff;
+  --surface-subtle:     #f4f4f4;   /* card / subtle bg             */
+  --surface-toc:        #f4f4f4;   /* TOC sidebar                  */
+  --surface-hover:      #ececec;   /* hover in lists               */
+  --surface-badge:      #f4f4f4;   /* badge background             */
+  --surface-dark:       #1f2937;   /* dark tooltip                 */
+  --on-dark:            #f3f4f6;   /* text on dark surface         */
+
+  /* ── Typography ─────────────────────────── */
+  --font-ui:     'Red Hat Display', system-ui, sans-serif;
+  --font-serif:  'Source Serif 4', Georgia, 'Times New Roman', serif;
+
+  /* Type scale (rem — root is 16 px) */
+  --t-xl:    1.45rem;   /* page / doc display title       */
+  --t-lg:    1.15rem;   /* article / annex headings       */
+  --t-md:    0.95rem;   /* sub-headings, brand name       */
+  --t-base:  1rem;      /* body copy                      */
+  --t-sm:    0.82rem;   /* footnotes, secondary body      */
+  --t-xs:    0.78rem;   /* TOC links, small UI            */
+  --t-2xs:   0.73rem;   /* TOC headers, badges (UC)       */
+  --t-3xs:   0.68rem;   /* kickers, very small labels     */
+
+  /* ── Spacing ─────────────────────────────── */
+  --sp-1:   0.25rem;
+  --sp-2:   0.5rem;
+  --sp-3:   0.75rem;
+  --sp-4:   1rem;
+  --sp-5:   1.25rem;
+  --sp-6:   1.5rem;
+  --sp-8:   2rem;
+  --sp-10:  2.5rem;
+  --sp-12:  3rem;
+  --sp-14:  3.5rem;
+
+  /* ── Floating controls ───────────────────── */
+  /* Bottom-anchored chrome that overlays the document: the assistant pill at
+     every width, plus a column of FABs (TOC, and search where a page boots it)
+     on mobile. --fab-stack-h is how far the tallest of them reaches up from the
+     viewport floor; .document derives its bottom padding from it so the end of
+     the text can always be scrolled clear. The ≤920px block raises it for the
+     FAB column. Change the geometry here, never in the media queries alone, or
+     the padding stops matching what it is meant to clear. */
+  --chat-pill-inset: 1rem;      /* AssistantModal anchor: Tailwind `bottom-4` */
+  --chat-pill-h:     3rem;
+  --fab-inset:       1.5rem;
+  --fab-size:        3.25rem;
+  --fab-gap:         0.75rem;
+  --fab-stack-h:     calc(var(--chat-pill-inset) + var(--chat-pill-h));
+
+  /* ── Radius ──────────────────────────────── */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* ── Shadows ─────────────────────────────── */
+  --shadow-sm:      0 2px 8px  rgba(0,0,0,0.08);
+  --shadow-md:      0 4px 16px rgba(0,0,0,0.13);
+  --shadow-tooltip: 0 4px 14px rgba(0,0,0,0.32);
+
+  /* ── Layout ──────────────────────────────── */
+  --toc-w:         231px;
+  /* Live width of the open desktop peek tray (set by JS); 0 when closed/minimized.
+     Used to keep the floating "Overview" button centred in the visible content. */
+  --peek-tray-w:   0px;
+  --site-header-h: 64px;
+  /* Readable line length for body copy. Four rules matched this by hand and
+     said so in comments; the overview's closing divider now has to line up
+     with them too, which made a fourth hand-copied 840px the wrong answer. */
+  --reading-max:   840px;
+  --header-h:      44px;
+  --total-header-h: calc(var(--site-header-h) + var(--header-h));
+
+  /* ── TOC card ────────────────────────────── */
+  --toc-card-bg:     #edf5fc;
+  --toc-card-border: #b8d4ee;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Reset
+   ══════════════════════════════════════════════════════════════════ */
+/* The exclusion list is the three roots React portals to <body> — the chat
+   widget (.aui-root), the welcome modal and Radix tooltip content — plus the
+   compliance checker island (.checker), which uses shadcn Buttons in the page
+   itself. They are shadcn/Tailwind subtrees, and this sheet is unlayered, so
+   without the exclusion `padding: 0` at (0,0,0) beats `.px-4` in @layer
+   utilities — layer order is only consulted after origin and importance, but
+   an unlayered author rule outranks every layer. Result before this
+   exclusion: the modal's "Got it" button and the chat composer rendered with
+   zero padding.
+
+   `:where()` around the list is load-bearing. `:not()` normally takes the
+   specificity of its most specific argument, which would lift this rule from
+   (0,0,0) to (0,1,0) and change which side of the cascade hundreds of later
+   rules in this file land on. `:where()` always contributes zero, so the
+   reset keeps the exact specificity it had. Baseline: Safari 14, Chrome 88,
+   Firefox 78 — well below the Safari 16.4 the Tailwind 4 build already needs.
+
+   Inside the excluded subtrees, Tailwind's preflight (@layer base) supplies
+   the same `box-sizing: border-box; margin: 0; padding: 0`, so they are not
+   left un-reset; the difference is that a utility class can now override it. */
+*:not(:where(.aui-root, .aui-root *, .welcome-modal, .welcome-modal *, [data-slot="tooltip-content"], [data-slot="tooltip-content"] *, .checker, .checker *)),
+*:not(:where(.aui-root, .aui-root *, .welcome-modal, .welcome-modal *, [data-slot="tooltip-content"], [data-slot="tooltip-content"] *, .checker, .checker *))::before,
+*:not(:where(.aui-root, .aui-root *, .welcome-modal, .welcome-modal *, [data-slot="tooltip-content"], [data-slot="tooltip-content"] *, .checker, .checker *))::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-serif);
+  color: var(--ink);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  /* `vh` is the LARGE viewport — the height with the mobile URL bar collapsed.
+     This shell scrolls an inner element (.document) and never the document
+     itself, so on iOS Safari the URL bar never collapses and that height is
+     permanently taller than what is visible: the foot of the shell, and with it
+     the bottom padding meant to clear the FABs, sits under the browser UI where
+     no amount of scrolling reaches it. `svh` is the small viewport — always the
+     visible one, and stable, so nothing reflows. The vh line above is the
+     fallback for browsers predating svh. */
+  height: 100svh;
+  overflow: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Site-wide top bar (logo + back link)
+   ══════════════════════════════════════════════════════════════════ */
+.site-header {
+  height: var(--site-header-h);
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  padding: 0 2rem;
+  flex-shrink: 0;
+  gap: 1.5rem;
+  position: relative;
+  /* Above the peek trays (300), hover chip (400), mobile tap menu / playlist
+     (500) and consent reopen button (650) so the global-nav mega panels are
+     never clipped by them; still below the comparison modal (1000), mobile TOC
+     (1200), chat (1300) and consent banner (1400), which are meant to cover
+     the header. */
+  z-index: 660;
+}
+.site-header-logo { display: flex; align-items: center; }
+.site-header-logo img { height: 36px; width: auto; display: block; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Header (nav tabs)
+   ══════════════════════════════════════════════════════════════════ */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-5);
+  height: var(--header-h);
+  background: var(--brand);
+  color: var(--surface);
+  flex-shrink: 0;
+  gap: var(--sp-4);
+  /* max-width: 100vw; */
+}
+
+.header-brand {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.brand-main {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: var(--t-md);
+  letter-spacing: 0.01em;
+}
+.brand-sub {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  opacity: 0.65;
+}
+
+/* ── Language switcher ──────────────────────────────────────────── */
+.lang-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-start;
+}
+.lang-btn {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  padding: 3px 8px;
+  border: 1px solid rgba(255,255,255,0.28);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--surface);
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: background 0.12s;
+  /* Object pages render this as a link to each language's own static page
+     (see objectLangSwitcherHtml() in object-pages.ts) rather than the
+     explorer's client-rendering button. */
+  text-decoration: none;
+}
+.lang-btn:hover  { background: rgba(255,255,255,0.15); text-decoration: none; }
+.lang-btn.active { background: rgba(255,255,255,0.25); border-color: var(--surface); }
+
+/* Light-background override (overview panel, CoP pages) */
+.lang-switcher-ov {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 3px;
+  margin-top: 0.4rem;
+}
+.lang-switcher-ov .lang-btn {
+  color: var(--ink-muted);
+  background: transparent;
+  border-color: var(--border-md);
+  font-size: var(--t-sm);
+  opacity: 0.3;
+  transition: background 0.12s, opacity 0.2s;
+}
+.lang-switcher-ov .lang-btn:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+  opacity: 1;
+}
+.lang-switcher-ov .lang-btn.active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  opacity: 1;
+}
+
+.lang-flag,
+.cmp-flag {
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: middle;
+  margin-right: 4px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.1);
+  position: relative;
+  top: -1px;
+}
+
+/* ── Document tabs ─────────────────────────────────────────────── */
+/* Document tabs sit left, introduced once by a standing label rather than
+   repeating "AI Act" on every tab. The search button is absolutely positioned,
+   so the label and tabs are the only items in flow. */
+.header-docs {
+  justify-content: flex-start;
+}
+.header-doc-label {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  opacity: 0.7;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.header-doc-tabs {
+  display: flex;
+  align-self: stretch;
+  margin-left: var(--sp-2);
+  gap: 0;
+}
+.header-doc-tab {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-4);
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  text-decoration: none;
+  color: rgba(255,255,255,0.55);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.header-doc-tab:hover  { color: rgba(255,255,255,0.9); text-decoration: none; }
+.header-doc-tab.active { color: var(--surface); background: rgba(255,255,255,0.1); border-bottom-color: rgba(255,255,255,0.8); }
+.header-doc-tab-icon { font-size: 1.1em; opacity: 0.75; margin-right: 0.45em; }
+
+/* ── Implementing Acts dropdown ── */
+.header-doc-dropdown {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+.header-dropdown-chevron {
+  font-size: 1em;
+  margin-left: 0.6em;
+  opacity: 0.7;
+  transition: transform 0.15s;
+}
+.header-doc-dropdown.open .header-dropdown-chevron { transform: rotate(180deg); }
+.header-dropdown-menu {
+  display: none;
+  position: absolute;
+  /* Anchor exactly to the navbar's bottom edge (the tab stretches the full --header-h,
+     so this lands flush with no sub-pixel gap). */
+  top: var(--header-h);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  min-width: 170px;
+  z-index: 300;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.22);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.header-doc-dropdown.open .header-dropdown-menu { display: block; }
+/* Hover-open is for real pointers only. On touch, :hover sticks after a tap, so
+   the menu stayed displayed — unpositioned, and therefore clipped by the
+   header's overflow — after the JS toggle had already closed it. */
+@media (hover: hover) and (pointer: fine) {
+  .header-doc-dropdown:hover .header-dropdown-menu { display: block; }
+  .header-doc-dropdown:hover .header-dropdown-chevron { transform: rotate(180deg); }
+}
+.header-dropdown-item {
+  display: block;
+  padding: 0.55rem var(--sp-4);
+  color: var(--heading);
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+.header-dropdown-item:hover { background: var(--surface-hover); color: var(--brand); text-decoration: none; }
+.header-dropdown-item.active { color: var(--brand); }
+
+.beta-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4em;
+  font-size: 0.6em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand);
+  background: rgba(255,255,255,0.9);
+  border-radius: 3px;
+  padding: 1px 4px;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Layout
+   ══════════════════════════════════════════════════════════════════ */
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Document switcher (top of every sidebar)
+   ══════════════════════════════════════════════════════════════════ */
+.toc-section-header {
+  padding: 0.55rem 1rem 0.2rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.doc-switcher {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+.doc-switcher-card {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  padding: 0.3rem 0.5rem;
+  text-decoration: none;
+  color: var(--ink-muted);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+  transition: background 0.1s;
+}
+.doc-switcher-card:hover:not(.active) { background: var(--surface-hover); text-decoration: none; }
+.doc-switcher-card.active {
+  color: var(--brand);
+  border-left-color: var(--brand);
+  background: var(--brand-light);
+}
+
+/* ── Switcher group (Implementing Acts accordion) ── */
+.doc-switcher-group-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  justify-content: space-between;
+}
+.doc-switcher-group-label { flex: 1; min-width: 0; }
+.doc-switcher-group-arrow {
+  font-size: 0.55rem;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+  transition: transform 0.18s;
+}
+.doc-switcher-group.open .doc-switcher-group-arrow { transform: rotate(90deg); }
+.doc-switcher-group-items { display: none; }
+.doc-switcher-group.open .doc-switcher-group-items { display: block; }
+.doc-switcher-child {
+  padding-left: 1.25rem;
+  border-left-color: transparent;
+}
+.doc-switcher-child.active { border-left-color: var(--brand); }
+.doc-switcher-title {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+.doc-switcher-icon {
+  font-size: 0.75em;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.doc-switcher-card.active .doc-switcher-title { font-weight: 700; color: var(--brand); }
+.doc-switcher-desc {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  opacity: 0.6;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   TOC sidebar
+   ══════════════════════════════════════════════════════════════════ */
+.toc {
+  width: var(--toc-w);
+  flex-shrink: 0;
+  background: transparent;
+  border-right: 1px solid transparent;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ui);
+  opacity: 0.85;
+  transition: opacity 100ms ease-in-out, background-color 100ms ease-in-out, border-color 100ms ease-in-out;
+}
+.toc:hover,
+.toc:focus-within {
+  opacity: 1;
+  background: var(--surface-toc);
+  border-right-color: var(--border);
+}
+#tocItems {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: var(--sp-3) 0 var(--sp-8);
+  box-shadow: inset 0 6px 8px -6px rgba(0,0,0,0.1);
+  /* Thin custom scrollbar — Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s ease;
+}
+.toc:hover #tocItems,
+.toc:focus-within #tocItems {
+  scrollbar-color: var(--border-md) transparent;
+}
+/* WebKit/Blink: 8px gutter, thumb hidden by default and fades in on .toc hover */
+#tocItems::-webkit-scrollbar { width: 8px; }
+#tocItems::-webkit-scrollbar-track { background: transparent; }
+#tocItems::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s ease;
+}
+.toc:hover #tocItems::-webkit-scrollbar-thumb,
+.toc:focus-within #tocItems::-webkit-scrollbar-thumb {
+  background-color: var(--border-md);
+}
+#tocItems::-webkit-scrollbar-thumb:hover { background-color: var(--ink-faint); }
+
+/* ── Sidebar search button ───────────────────────────────────────────────── */
+.toc-search-wrap {
+  padding: 0.45rem 0.6rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+.toc-search-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: 1.5px solid var(--border-md);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.6rem;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.toc-search-btn:hover { border-color: var(--brand); }
+/* Object pages render this as a plain link to the explorer (see objectToc()
+   in object-pages.ts) rather than a button that opens the tray in place. */
+.toc-search-btn,
+.toc-search-btn:hover { text-decoration: none; }
+.toc-search-icon { color: var(--ink-faint); font-size: 0.75rem; flex-shrink: 0; }
+.toc-search-btn:hover .toc-search-icon { color: var(--brand); }
+/* Disabled variant (non-English CoP — content is English-only) */
+.toc-search-btn-disabled { opacity: 0.55; cursor: not-allowed; }
+.toc-search-btn-disabled:hover { border-color: var(--border-md); }
+.toc-search-btn-disabled:hover .toc-search-icon { color: var(--ink-faint); }
+.toc-search-btn-disabled .toc-search-btn-text { font-style: italic; }
+.toc-search-btn-text {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  color: var(--ink-faint);
+  text-align: left;
+}
+/* kbd badge styled for the light sidebar (overrides the dark header variant) */
+.toc-search-btn .search-kbd {
+  background: var(--surface-hover);
+  border-color: var(--border-md);
+  color: var(--ink-faint);
+}
+
+/* Collapsible chapter/section header */
+.toc-collapsible-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0.45rem var(--sp-4);
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 700;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.toc-collapsible-header:hover { background: var(--surface-hover); }
+
+.toc-arrow {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.55rem;
+  transition: transform 0.18s ease;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.toc-arrow.open { transform: rotate(90deg); }
+
+.toc-sub { display: none; }
+.toc-sub.open { display: block; }
+
+/* Recital number grid inside the sidebar accordion */
+.toc-rec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+  gap: 3px;
+  padding: 0.5rem var(--sp-4) 0.6rem var(--sp-4);
+}
+.toc-rec-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  height: 1.55rem;
+  text-decoration: none;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.toc-rec-btn:hover {
+  background: var(--brand-light);
+  color: var(--brand);
+  border-color: var(--brand-border);
+  text-decoration: none;
+}
+.toc-rec-btn.toc-active {
+  background: var(--brand-light);
+  color: var(--brand);
+  border-color: var(--brand-border);
+  font-weight: 700;
+}
+
+/* Linked items inside an accordion */
+/* Wrapper when sub-link has action buttons */
+.toc-sub-item {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+.toc-sub-item .toc-sub-link { flex: 1; min-width: 0; padding-right: 0.25rem; }
+.toc-sub-item:hover { background: var(--surface-hover); }
+.toc-sub-item:has(.toc-sub-link.toc-active) { background: var(--brand-light); }
+
+/* Hover-reveal action buttons.
+   Collapsed to zero width until hover so the title can use the full sidebar width
+   (~10 more characters). On hover the icons take their space and the title clips
+   further to make room. */
+.toc-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-right: 5px;
+  flex-shrink: 0;
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  /* Hover-out: hide instantly. The width snaps back to 0 (can't be animated from
+     auto), so a fading opacity would briefly show the icons clipped at the edge —
+     vanishing them immediately avoids that flash. */
+  transition: opacity 0s;
+}
+/* Hover-in: the width snaps open immediately (title clips to make room), but the
+   icons fade in only after a short delay — so they never flash at the far-right
+   edge before the layout settles. */
+.toc-sub-item:hover .toc-item-actions { opacity: 1; width: auto; transition: opacity 0.08s 0.06s; }
+.toc-item-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 0.6rem;
+  border-radius: 3px;
+  text-decoration: none;
+  line-height: 1;
+}
+.toc-item-action:hover { background: var(--surface-hover); color: var(--brand); text-decoration: none; }
+/* Reset global .open-peek-btn / .open-page-btn styles when used as TOC icon buttons */
+.toc-item-action.open-peek-btn,
+.toc-item-action.open-page-btn {
+  opacity: 1;
+  border: none;
+  height: 18px;
+  padding: 0;
+  margin-left: 0;
+}
+
+.toc-sub-link {
+  display: block;
+  padding: 0.22rem var(--sp-4) 0.22rem 1.8rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  color: var(--ink-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toc-sub-link:hover              { color: var(--brand); }
+.toc-sub-link.toc-active         { color: var(--brand); font-weight: 700; }
+/* Standalone sub-links (not in a .toc-sub-item wrapper) keep their own background */
+.toc-sub:not(:has(.toc-sub-item)) .toc-sub-link:hover { background: var(--surface-hover); }
+.toc-sub:not(:has(.toc-sub-item)) .toc-sub-link.toc-active { background: var(--brand-light); }
+
+/* Flat (non-accordion) top-level entries: Overview, Footnotes */
+.toc-overview-sticky {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  flex-shrink: 0;
+  padding: 0.45rem var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 700;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+}
+.toc-overview-sticky:hover { background: var(--surface-hover); text-decoration: none; }
+
+/* Chapter-tree ↔ flat-article-list switch, above the scrollable TOC body */
+.toc-view-toggle {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 0.4rem var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.toc-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35em;
+  flex: 1;
+  padding: 0.3rem 0.4rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.toc-view-btn:hover  { color: var(--brand); border-color: var(--brand-border); }
+.toc-view-btn.active {
+  background: var(--brand-light);
+  color: var(--brand);
+  border-color: var(--brand-border);
+  font-weight: 700;
+}
+.toc-view-btn > i { font-size: 0.9em; }
+
+.toc-flat-link {
+  display: block;
+  padding: 0.45rem var(--sp-4);
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.toc-flat-link:hover              { color: var(--brand); background: var(--surface-hover); text-decoration: none; }
+.toc-flat-link.toc-active         { color: var(--brand); font-weight: 800; background: var(--brand-light); }
+
+/* Section sub-header inside a chapter */
+.toc-sub-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.32rem 0.75rem 0.32rem var(--sp-6);
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.toc-sub-section-header:hover { background: var(--surface-hover); }
+
+/* Section header + its articles now carry the same three-line block as a chapter,
+   so a left rule marks the nesting that the 8px indent alone doesn't convey. */
+.toc-sec-block {
+  border-left: 2px solid var(--border);
+  margin-left: var(--sp-4);
+}
+.toc-sec-block .toc-sub-section-header { padding-left: var(--sp-3); }
+.toc-sec-block .toc-sub-deep { padding-left: var(--sp-4); }
+
+/* Section info block (label + title + art range) — same shape as .toc-ch-info,
+   one step smaller so the section still reads as a child of the chapter. */
+.toc-sec-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+.toc-sec-label {
+  font-size: var(--t-3xs);
+  font-weight: 700;
+  color: var(--ink-muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.toc-sec-title {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--ink-2);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toc-sec-range {
+  font-size: var(--t-3xs);
+  font-weight: 400;
+  color: var(--ink-faint);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+/* Extra indent for article links inside a section */
+.toc-sub-deep { padding-left: 2.5rem; }
+
+.toc-divider {
+  height: 1px;
+  background: var(--border);
+  margin: var(--sp-2) 0;
+}
+
+/* ID + article-range on one row, so each chapter/section costs two lines, not three */
+.toc-id-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* Chapter info block (label + title + art range) */
+.toc-ch-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;            /* fill the header (minus the arrow) so the title clips at full width */
+}
+.toc-ch-label {
+  /* Smaller, sentence-case, un-spaced chapter ID (matches the overview .ov-num).
+     Overrides the uppercase + letter-spacing inherited from .toc-collapsible-header. */
+  font-size: var(--t-3xs);
+  font-weight: 700;
+  color: var(--ink-muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.toc-ch-title {
+  /* Pretty name (e.g. "General provisions") — larger + bolder than the ID */
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toc-ch-range {
+  font-size: var(--t-3xs);
+  font-weight: 400;
+  color: var(--ink-faint);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Main document panel
+   ══════════════════════════════════════════════════════════════════ */
+.document {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  scroll-padding-top: 20vh;
+  /* Bottom clears the floating chrome (see --fab-stack-h) plus a gutter — the
+     assistant pill is fixed at every width, not just mobile. */
+  padding: var(--sp-10) 3.5rem calc(var(--fab-stack-h) + var(--sp-10));
+  transition: padding-right 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+body.peek-open .document {
+  /* Fixed reservation = tray min-width (360px = PEEK_TRAY_MIN_W in shared.js) PLUS a
+     1.5rem gutter, so at the tray's narrowest the content doesn't butt against its edge.
+     The content keeps a stable width and never reflows while the tray is dragged/snapped —
+     a wider tray simply overlaps the reserved area rather than squeezing the text. */
+  padding-right: calc(360px + 1.5rem);
+}
+/* Minimized to the edge tab: drop the reserved gutter so the content reflows to
+   full width and nothing stays hidden behind the (now collapsed) tray. */
+body.peek-open.peek-min .document { padding-right: 3.5rem; }
+
+/* Named `doc` as well as unnamed. Unnamed @container queries still resolve here
+   (naming a container does not remove it from that lookup), but a rule whose
+   subject sits INSIDE a nested container — e.g. .ov-struct-label inside
+   .ov-features, which is itself a `feat` container — would otherwise resolve
+   against that nested container and silently query the wrong width. Those rules
+   say `@container doc (…)` explicitly. */
+.document-inner { max-width: 1160px; margin: 0 auto; container: doc / inline-size; }
+/* Readability floor (desktop): at the narrowest desktop widths — just above the 920px
+   tablet breakpoint, with the sidebar still present — the reserved tray gutter would
+   otherwise squeeze the content far too narrow. Hold a minimum readable column; the
+   peek tray is allowed to overlap it here (the ≤920px block resets this to 0, where the
+   tray overlays content as a bottom-sheet / off-canvas layout instead). */
+/* Scoped to the MAIN document's direct child only — the peek tray reuses
+   .document-inner (as .peek-document-inner) for rendering, and must NOT inherit
+   this floor or its content would overflow the (narrower) tray. */
+body.peek-open .document > .document-inner { min-width: 440px; }
+/* Single-item pages: constrain to readable width */
+.layout--single .document-inner { max-width: var(--reading-max); }
+
+/* ── Document title ─────────────────────────────────────────────── */
+.doc-title {
+  margin-bottom: 2.75rem;
+  padding-bottom: 1.75rem;
+}
+.doc-title h2 {
+  font-family: var(--font-ui);
+  font-size: var(--t-xl);
+  font-weight: 700;
+  color: var(--heading);
+  line-height: 1.3;
+  margin-bottom: 0.4rem;
+}
+.doc-ref {
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  color: var(--ink-faint);
+}
+
+/* ── Section group heading (Recitals label) ─────────────────────── */
+.section-heading {
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: var(--sp-12) 0 1.25rem;
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: var(--sp-6);
+}
+
+/* ── Chapter block ──────────────────────────────────────────────── */
+.chapter-block {
+  margin: 4.5rem 0 var(--sp-6);
+  padding-bottom: var(--sp-4);
+  border-bottom: 2px solid var(--border);
+  scroll-margin-top: var(--sp-6);
+}
+.chapter-block:first-child { margin-top: 0; }
+.chapter-label {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  margin-bottom: var(--sp-1);
+}
+.chapter-title {
+  font-family: var(--font-ui);
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--heading);
+  line-height: 1.25;
+}
+
+/* ── Section block ──────────────────────────────────────────────── */
+.section-block {
+  margin: var(--sp-12) 0 1.2rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: var(--sp-6);
+}
+.section-label {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: var(--sp-1);
+}
+.section-title {
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-style: italic;
+  line-height: 1.35;
+}
+
+/* ── Article / Annex heading ────────────────────────────────────── */
+.item-heading {
+  font-family: var(--font-ui);
+  font-size: var(--t-lg);
+  font-weight: 700;
+  color: var(--heading);
+  margin: 4.5rem 0 0.4rem;
+  padding-top: var(--sp-1);
+  scroll-margin-top: var(--sp-6);
+  line-height: 1.3;
+}
+.item-heading .heading-label      { font-weight: 800; }
+.item-heading .heading-title      { font-weight: 500; color: var(--ink); }
+
+/* Object pages / /single: the heading IS the page title (there is no other
+   h1), so it reads at the site's page-title size rather than the explorer's
+   in-document subsection size. Tag-qualified so the explorer's h2 (many
+   articles under one document h1) is untouched. */
+h1.item-heading,
+h1.recital-header-label {
+  font-size: var(--t-xl);
+}
+
+/* Copy URL button on item headings */
+.copy-url-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 0 6px;
+  height: 1.5rem;
+  box-sizing: border-box;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+  opacity: 0;
+  transition: color 0.12s, border-color 0.12s, background 0.12s, opacity 0.15s;
+}
+.copy-url-btn:hover { color: var(--brand); border-color: var(--border); background: var(--brand-light); }
+.copy-url-btn.copied { color: #22c55e; border-color: #22c55e40; opacity: 1; }
+
+/* "Ask the assistant" button — same affordance as the copy-link button, so it
+   inherits the reveal-on-hover rules below rather than adding a second set. */
+.ask-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 0.68rem;
+  padding: 0 6px;
+  height: 1.5rem;
+  box-sizing: border-box;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+  opacity: 0;
+  transition: color 0.12s, border-color 0.12s, background 0.12s, opacity 0.15s;
+}
+.ask-ai-btn:hover { color: var(--brand); border-color: var(--border); background: var(--brand-light); }
+/* Confirms the click landed even though the chat opens elsewhere on screen. */
+.ask-ai-btn.attached { color: var(--brand); border-color: var(--brand-border); opacity: 1; }
+
+/* Reveal copy/open/ask buttons only when hovering the title row itself */
+.item-heading:hover .copy-url-btn,
+.item-heading:hover .open-page-btn,
+.item-heading:hover .open-peek-btn,
+.item-heading:hover .ask-ai-btn,
+.chapter-block:hover .copy-url-btn,
+.chapter-block:hover .open-page-btn,
+.chapter-block:hover .open-peek-btn,
+.section-block:hover .copy-url-btn,
+.section-block:hover .open-page-btn,
+.section-block:hover .open-peek-btn,
+.recital-block:hover .copy-url-btn,
+.recital-block:hover .open-page-btn,
+.recital-block:hover .open-peek-btn,
+.recital-block:hover .ask-ai-btn { opacity: 1; }
+
+/* Paragraph-level copy URL / ask buttons: hidden until para hover */
+.para .copy-url-btn,
+.para .ask-ai-btn { opacity: 0; }
+.para:hover .copy-url-btn,
+.para:hover .ask-ai-btn { opacity: 1; }
+
+/* Touch devices never fire hover. Heading-level ask buttons are revealed by the
+   first-tap handler further down, the same way their copy / open / peek
+   siblings are; paragraph-level ones have no such handler, so they stay
+   visible rather than becoming unreachable. */
+@media (hover: none) {
+  .para .ask-ai-btn { opacity: 1; }
+}
+
+/* ── Compare button (appears on paragraph hover) ─────────────────────────── */
+/* Moved here from index-page.css: object pages now render this button too
+   (see src/scripts/object-compare.ts) — it was never truly explorer-only,
+   just never rendered anywhere else (interactive:false stripped it). */
+.cmp-btn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--ink-faint);
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0 6px;
+  height: 1.5rem;
+  box-sizing: border-box;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s,
+    opacity 0.15s;
+}
+.para:hover .cmp-btn,
+.recital:hover .cmp-btn {
+  opacity: 1;
+}
+.cmp-btn:hover {
+  background: var(--brand-light);
+  color: var(--brand);
+  border-color: var(--border);
+}
+.para.cmp-preview {
+  background: var(--brand-light);
+  border-radius: var(--radius-sm);
+  outline: 1px solid var(--brand-border);
+  transition: background 0.1s;
+}
+
+/* ── Comparison modal ─────────────────────────────────────────────────────── */
+.cmp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.cmp-overlay.open {
+  display: flex;
+}
+
+.cmp-modal {
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  width: min(92vw, 680px);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cmp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.cmp-title {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--heading);
+}
+.cmp-subtitle {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  margin-top: 0.1rem;
+}
+.cmp-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.cmp-close:hover {
+  background: var(--surface-subtle);
+  color: var(--ink);
+}
+
+.cmp-lang-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0.65rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.cmp-picker-label {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  margin-right: 0.4rem;
+  flex-shrink: 0;
+}
+.cmp-lang-btn {
+  /* Tailwind Preflight sets img{display:block}; .cmp-flag doesn't override it
+     (only .lang-btn does, via its own display:flex — see that rule). Without
+     an explicit flex context here, the button's own inner formatting context
+     blockifies too, and a block-level flag image stacks above the code
+     instead of sitting beside it. */
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: background 0.1s;
+}
+.cmp-lang-btn.active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.cmp-lang-btn.locked {
+  opacity: 0.7;
+  cursor: default;
+}
+.cmp-lang-btn.maxed {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.cmp-lang-btn:not(.active):not(.locked):not(.maxed):hover {
+  background: var(--surface-subtle);
+}
+
+.cmp-columns {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.cmp-column {
+  padding: 1rem 1.25rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+.cmp-column:last-child {
+  border-bottom: none;
+}
+.cmp-col-header {
+  /* Same fix as .cmp-lang-btn above — the flag <img> is Preflight-blockified,
+     so this needs its own flex context or it stacks above the code. */
+  display: flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+.cmp-empty {
+  color: var(--ink-faint);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+/* CoP heading copy-link: headings are flex so button sits inline after the title text */
+.cop-content h2,
+.cop-content h3,
+.cop-content h4 { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; }
+.cop-content h2 > .copy-url-btn,
+.cop-content h3 > .copy-url-btn,
+.cop-content h4 > .copy-url-btn { opacity: 0; flex-shrink: 0; }
+.cop-content h2:hover > .copy-url-btn,
+.cop-content h3:hover > .copy-url-btn,
+.cop-content h4:hover > .copy-url-btn { opacity: 1; }
+
+/* CoP paragraph/list-item copy-link: button is prepended, float:right places it at top-right */
+.cop-content p > .copy-url-btn,
+.cop-content li > .copy-url-btn { float: right; margin: 0.1em 0 0.25rem 0.5rem; opacity: 0; }
+.cop-content p:hover > .copy-url-btn,
+.cop-content li:hover > .copy-url-btn { opacity: 1; }
+
+/* Chapter / Section index pages (single.html?type=chapter) */
+.ch-index-section { margin-bottom: 1.6rem; }
+.ch-index-sec-label {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 700;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 0.4rem;
+}
+.ch-index-sec-title {
+  font-family: var(--font-serif);
+  font-size: var(--t-base);
+  font-weight: 600;
+  color: var(--heading);
+  margin-bottom: 0.7rem;
+}
+.ch-index-art-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.ch-index-art-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.1s;
+}
+.ch-index-art-item:hover { background: var(--surface-hover); }
+.ch-index-art-num {
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--brand);
+  white-space: nowrap;
+  min-width: 5rem;
+}
+.ch-index-art-title {
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  color: var(--ink);
+}
+
+/* Internal cross-reference links (article/annex/recital auto-links) */
+.int-link {
+  color: var(--brand);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--brand);
+}
+.int-link:hover {
+  text-decoration-style: solid;
+}
+
+/* ── Paragraph blocks ───────────────────────────────────────────── */
+.para {
+  display: flex;
+  gap: 0;
+  margin: var(--sp-2) 0;
+  line-height: 1.82;
+  font-size: var(--t-base);
+}
+.para.continuation { margin-top: 0.85rem; }
+
+.para.depth-1 { padding-left: var(--sp-8); }
+.para.depth-2 { padding-left: 4rem; }
+.para.depth-3 { padding-left: 6rem; }
+.para.no-label { padding-left: 0; }
+
+/* A nested paragraph carrying no label of its own belongs to the labelled
+   paragraph above it, so it aligns with that paragraph's TEXT rather than with
+   its label — at the plain depth indent it reads as outdented from its own
+   heading. Label slots are 2.8rem at depth 0 and 2.4rem below it. */
+.para.depth-1.nested-body { padding-left: 2.8rem; }
+.para.depth-2.nested-body { padding-left: calc(var(--sp-8) + 2.4rem); }
+.para.depth-3.nested-body { padding-left: calc(4rem + 2.4rem); }
+
+/* Code rows (Annex XIV) hang their code where the parent's text starts, so the
+   code column lines up under the sub-section title it belongs to. */
+.para.depth-2.code-row { padding-left: calc(var(--sp-8) + 2.4rem); }
+.para.depth-3.code-row { padding-left: calc(4rem + 2.4rem); }
+
+.para-label {
+  flex-shrink: 0;
+  width: 2.8rem;
+  padding-right: var(--sp-2);
+  font-weight: 600;
+  color: var(--ink);
+  font-size: var(--t-base);
+}
+/* Explicit code labels — Annex XIV's "AIP 0102" and friends. The default slot
+   is sized for "(a)" and breaks a code across two lines; these are identifiers,
+   so they get their own width and never wrap. */
+.para-label-code {
+  width: auto;
+  min-width: 6.2rem;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--brand);
+}
+.para.depth-1 .para-label,
+.para.depth-2 .para-label,
+.para.depth-3 .para-label { width: 2.4rem; }
+
+.para-text    { flex: 1; min-width: 0; }
+.is-quote     { font-style: italic; }
+
+/* Compare + copy buttons on paragraphs — stacked horizontally */
+.para-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 0.4rem;
+  align-self: flex-start;
+  padding-top: 0.2em; /* align with first text line */
+}
+.para-actions .cmp-btn,
+.para-actions .ask-ai-btn,
+.para-actions .copy-url-btn { margin-left: 0; }
+
+/* ── Recitals ───────────────────────────────────────────────────── */
+.recital-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  margin-top: 2.5rem;
+  margin-bottom: 0.15rem;
+}
+.recital-header-label {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-lg);
+  font-weight: 700;
+  color: var(--ink-muted);
+  letter-spacing: 0;
+}
+.recital-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.recital-header-actions .open-page-btn,
+.recital-header-actions .open-peek-btn,
+.recital-header-actions .copy-url-btn { margin-left: 0; }
+
+.recital {
+  display: flex;
+  gap: 0;
+  margin: var(--sp-2) 0;
+  line-height: 1.82;
+  font-size: var(--t-base);
+}
+.recital.continuation { margin-top: 0.75rem; }
+.recital-num {
+  flex-shrink: 0;
+  width: 3rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: var(--t-base);
+}
+.recital-text { flex: 1; min-width: 0; }
+
+/* ── Footnotes section ──────────────────────────────────────────── */
+.footnotes {
+  margin-top: var(--sp-14);
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+.footnotes-heading {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.75rem;
+}
+.fn-item {
+  display: flex;
+  gap: var(--sp-2);
+  margin: 0.35rem 0;
+  font-size: var(--t-sm);
+  color: var(--ink-muted);
+  line-height: 1.55;
+  scroll-margin-top: var(--sp-4);
+}
+.fn-num { flex-shrink: 0; font-weight: 600; color: var(--ink); width: 2rem; }
+
+/* Inline footnote reference superscript */
+sup.fnref { line-height: 0; position: relative; }
+sup.fnref a {
+  color: var(--brand);
+  font-size: 0.72em;
+  font-weight: 700;
+  text-decoration: none;
+  background: var(--blue-hl);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+}
+sup.fnref a:hover { text-decoration: underline; background: var(--blue-hl-hover); }
+
+/* Footnote hover tooltip */
+.fn-tip {
+  display: none;
+  position: absolute;
+  bottom: 1.6em;
+  left: -0.5em;
+  right: auto;
+  width: 340px;
+  background: var(--surface-dark);
+  color: var(--on-dark);
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 400;
+  line-height: 1.5;
+  padding: var(--sp-2) 0.72rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-tooltip);
+  white-space: normal;
+  z-index: 200;
+  pointer-events: none;
+}
+/* .fn-tip inline elements are always hidden — content is shown via #fnTipFloat */
+.fn-tip { display: none !important; }
+
+/* Footnote float tooltip: fixed to viewport, injected into <body> by JS */
+.fn-tip-float {
+  display: none;
+  position: fixed;
+  width: 340px;
+  background: var(--surface-dark);
+  color: var(--on-dark);
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 400;
+  line-height: 1.5;
+  padding: var(--sp-2) 0.72rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-tooltip);
+  white-space: normal;
+  z-index: 9999;
+  pointer-events: none;
+}
+.fn-backlink         { color: var(--ink-faint); text-decoration: none; margin-right: var(--sp-1); }
+.fn-backlink:hover   { color: var(--brand); }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Term / context tooltips
+   ══════════════════════════════════════════════════════════════════ */
+.term-ref {
+  position: relative;
+  border-bottom: 1px dashed var(--ink-faint);
+  cursor: help;
+}
+.term-tip {
+  visibility: hidden;
+  opacity: 0;
+  transition: visibility 0s 200ms, opacity 0.08s 200ms;
+  position: absolute;
+  bottom: 1.3em;
+  left: 0;
+  width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.8rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--ink);
+  box-shadow: var(--shadow-md);
+  white-space: normal;
+  z-index: 400;
+  pointer-events: auto;
+}
+/* JS flips position based on trigger location: tip-h-flip anchors to right of
+   trigger (avoid viewport right-overflow); tip-v-flip anchors below trigger
+   (avoid viewport top-overflow). Classes can combine. */
+.term-tip.tip-h-flip { left: auto; right: 0; }
+.term-tip.tip-v-flip { top: 1.3em; bottom: auto; }
+/* Bridge fills the small gap between trigger and tip so cursor traversal
+   doesn't lose hover. Flipped to top when tip is below the trigger. */
+.term-tip::before {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+.term-tip.tip-v-flip::before { top: -10px; bottom: auto; }
+.term-ref:hover > .term-tip {
+  visibility: visible;
+  opacity: 1;
+  transition: visibility 0s 50ms, opacity 0.08s 50ms;
+}
+.term-tip-key {
+  display: block;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 0.35rem;
+}
+.term-tip-body { display: block; }
+.term-tip-src {
+  display: block;
+  font-size: var(--t-3xs);
+  font-weight: 500;
+  color: var(--ink-faint);
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Global link default
+   ══════════════════════════════════════════════════════════════════ */
+a                { color: var(--brand); }
+a:hover          { text-decoration: underline; }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Open-as-page link (↗ on article headings)
+   ══════════════════════════════════════════════════════════════════ */
+.open-page-btn,
+.open-peek-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-left: 0.55rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 600;
+  color: var(--ink-faint);
+  text-decoration: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  height: 1.5rem;
+  box-sizing: border-box;
+  vertical-align: middle;
+  cursor: pointer;
+  opacity: 0;
+  transition: color 0.12s, border-color 0.12s, opacity 0.15s;
+}
+.open-page-btn:hover { color: var(--brand); border-color: var(--brand-border); text-decoration: none; }
+.open-peek-btn:hover { color: var(--brand); border-color: var(--brand-border); }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Article metadata (comes into force / according to) — plain text
+   ══════════════════════════════════════════════════════════════════ */
+.item-meta {
+  margin: 0 0 var(--sp-4);
+  /* .item-meta-text sets its own smaller line-height, but this div's own
+     inherited font-size/line-height (16px/1.5 by default) still forms the
+     line box's strut, which otherwise overrides the child's — match here too. */
+  font-size: var(--t-2xs);
+  line-height: 1.5;
+}
+.item-meta-text {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+.item-meta-text a { color: var(--ink-faint); text-decoration: underline; text-decoration-color: var(--border); }
+.item-meta-text a:hover { color: var(--brand); }
+
+/* Paragraph-level "comes into force" note (e.g. Article 6(1) → 2 August 2027).
+   Deliberately low-key: plain muted text, no background. */
+.para-cif {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  /* Align with the paragraph text, not the paragraph number — matches .para-label width. */
+  padding-left: 2.8rem;
+  margin: 0.4rem 0 0.9rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+.para-cif i { color: var(--ink-faint); font-size: 0.9em; }
+.para-cif a { color: var(--ink-faint); text-decoration: underline; text-decoration-color: var(--border); }
+.para-cif a:hover { color: var(--brand); }
+
+/* Related recitals / provisions cross-reference lines. Block-level; the links are
+   small chips (bordered, so each has a comfortable click/tap target). */
+.related-refs {
+  margin: 0.35rem 0 0.9rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  color: var(--ink-faint);
+  line-height: 1.95;
+}
+.related-refs > i { color: var(--brand); margin-right: 0.2em; }
+.related-refs-label { font-weight: 600; color: var(--ink-muted); margin-right: 0.25em; }
+/* Short-but-wide chips: a light grey fill (no border) keeps them subtle while
+   giving a comfortable click target. */
+.related-refs a {
+  display: inline-block;
+  line-height: 1.5;
+  color: var(--brand);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: 4px;
+  padding: 0.02rem 0.55rem;
+  margin-right: 0.3em;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  transition: background 0.12s, color 0.12s;
+}
+.related-refs a:hover {
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand);
+  text-decoration: none;
+}
+/* Paragraph-level related recitals align with the (sub-)paragraph's text; the
+   indent matches .para depths (label width 2.8rem at depth 0, 2.4rem deeper). */
+.related-refs-para { padding-left: 2.8rem; }
+.related-refs-para.depth-1 { padding-left: calc(var(--sp-8) + 2.4rem); }
+.related-refs-para.depth-2 { padding-left: calc(4rem + 2.4rem); }
+.related-refs-para.depth-3 { padding-left: calc(6rem + 2.4rem); }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   View-in-context button (single.html)
+   ══════════════════════════════════════════════════════════════════ */
+.view-in-context-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-1) 0.75rem;
+  margin-bottom: var(--sp-6);
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.view-in-context-btn:hover {
+  color: var(--brand);
+  border-color: var(--brand-border);
+  background: var(--surface-subtle);
+  text-decoration: none;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Breadcrumb (single.html)
+   ══════════════════════════════════════════════════════════════════ */
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  color: var(--ink-faint);
+  margin-bottom: var(--sp-6);
+}
+.breadcrumb a              { color: var(--ink-muted); text-decoration: none; }
+.breadcrumb a:hover        { color: var(--brand); text-decoration: underline; }
+.breadcrumb-sep            { color: var(--border-md); }
+.breadcrumb-current        { color: var(--ink); font-weight: 600; }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Prev / Next navigation (single.html)
+   ══════════════════════════════════════════════════════════════════ */
+.single-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-12);
+  padding-top: var(--sp-6);
+  border-top: 1px solid var(--border);
+}
+.single-nav-btn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  text-decoration: none;
+  padding: 0.65rem var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  max-width: 45%;
+  transition: border-color 0.12s, background 0.12s;
+}
+.single-nav-btn:hover         { border-color: var(--brand-border); background: var(--surface-subtle); text-decoration: none; }
+.single-nav-btn.nav-prev      { align-items: flex-start; }
+.single-nav-btn.nav-next      { align-items: flex-end; margin-left: auto; }
+.single-nav-dir {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.single-nav-label {
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--brand);
+  line-height: 1.3;
+}
+
+/* ── Content-swap dimming (language switch while content already loaded) ── */
+#document.is-loading,
+#toc.is-loading {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+#document,
+#toc {
+  transition: opacity 0.1s ease;
+}
+
+/* ── Loading spinner ────────────────────────────────────────────── */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-8);
+}
+.loading-spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--border);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Mobile TOC drawer overlay + FAB
+   ══════════════════════════════════════════════════════════════════ */
+.toc-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 98;
+  -webkit-tap-highlight-color: transparent;
+}
+.toc-overlay.toc-open { display: block; }
+
+.toc-fab {
+  display: none;            /* shown only on mobile via media query */
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 1.05rem;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.28);
+  z-index: 99;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.toc-fab:hover  { background: #2e6ab8; }
+.toc-fab:active { transform: scale(0.93); }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Search
+   ══════════════════════════════════════════════════════════════════ */
+.header { position: relative; }
+
+.search-btn {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: var(--radius-sm);
+  color: rgba(255,255,255,0.85);
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  /* Object pages render this as a link (see NavHeader's searchHref prop)
+     rather than the button the explorer/CoP/single create dynamically. */
+  text-decoration: none;
+}
+.search-btn:hover { background: rgba(255,255,255,0.22); color: #fff; text-decoration: none; }
+/* Active = search tray is open; the button now acts as "Exit search". */
+.search-btn-active { background: rgba(255,255,255,0.28); color: #fff; }
+.search-btn-disabled { opacity: 0.55; cursor: not-allowed; }
+.search-btn-disabled:hover { background: rgba(255,255,255,0.12) !important; color: rgba(255,255,255,0.85) !important; }
+@keyframes _search-btn-flash {
+  0%, 100% { background: rgba(255,255,255,0.12); }
+  40%       { background: rgba(255,255,255,0.38); color: #fff; }
+}
+.search-btn-flash-anim { animation: _search-btn-flash 0.55s ease; }
+.search-kbd {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 0.65em;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 0;
+}
+
+.search-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  top: var(--total-header-h);
+  background: rgba(0,0,0,0.22);
+  z-index: 305;
+}
+.search-backdrop.open { display: block; }
+
+.search-tray {
+  display: none;
+  position: fixed;
+  top: var(--total-header-h);
+  left: 0;
+  right: 0;
+  z-index: 310;
+  background: var(--surface);
+  border-bottom: 2px solid var(--border-md);
+  box-shadow: 0 6px 32px rgba(0,0,0,0.13);
+  flex-direction: column;
+  align-items: center;
+}
+.search-tray.open { display: flex; }
+.search-tray-inner {
+  width: 100%;
+  max-width: 740px;
+  padding: 0.75rem 1rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1.5px solid var(--brand);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.75rem;
+  background: var(--surface);
+}
+.search-input-icon { color: var(--brand); flex-shrink: 0; font-size: 0.85rem; }
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-family: var(--font-ui);
+  font-size: var(--t-base);
+  color: var(--ink);
+  background: transparent;
+}
+.search-input::placeholder { color: var(--ink-faint); }
+.search-tip {
+  margin-top: 0.5rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  color: var(--ink-faint);
+}
+.search-tip i { color: var(--brand); margin-right: 0.15rem; }
+.search-tip code {
+  font-family: var(--font-ui);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  color: var(--ink);
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  /* Keep each operator chunk together — never wrap "exact phrase" or -exclude internally. */
+  white-space: nowrap;
+}
+.search-results {
+  overflow-y: auto;
+  max-height: calc(70vh - 3rem);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 0.5rem;
+  /* Thin custom scrollbar in its own gutter so it never overlays the content
+     (replaces the macOS overlay scrollbar). */
+  scrollbar-width: thin;                              /* Firefox */
+  scrollbar-color: var(--border-md) transparent;     /* Firefox: thumb / track */
+  /* Bottom edge fades to white (tray behind is white). The TOP edge stays solid until
+     the user scrolls down — .is-scrolled (toggled in JS) adds the top fade. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 18px), transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 18px), transparent 100%);
+}
+/* WebKit/Blink: a 10px-wide gutter with a ~4px thumb centred inside it (the
+   transparent border + padding-box clip creates the gutter spacing). */
+.search-results::-webkit-scrollbar { width: 10px; }
+.search-results::-webkit-scrollbar-track { background: transparent; }
+.search-results::-webkit-scrollbar-thumb {
+  background-color: var(--border-md);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.search-results::-webkit-scrollbar-thumb:hover { background-color: var(--ink-faint); }
+.search-results.is-scrolled {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+}
+.search-results-hint {
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  color: var(--ink-faint);
+  padding: 0.6rem 0.4rem;
+  text-align: center;
+}
+.search-result-item {
+  display: block;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid transparent;
+  transition: background 0.08s, border-color 0.08s;
+  outline: none;
+}
+.search-result-item:hover,
+.search-result-item.kbd-selected {
+  background: var(--brand-light);
+  border-color: var(--brand-border);
+}
+.search-result-header { display: flex; align-items: baseline; gap: 0.55rem; flex-wrap: wrap; }
+.search-result-label { font-family: var(--font-ui); font-size: var(--t-xs); font-weight: 700; color: var(--brand); white-space: nowrap; margin-right: 0.45rem; }
+.search-result-title { font-family: var(--font-ui); font-size: var(--t-sm); color: var(--heading); font-weight: 500; }
+.search-result-snippet { font-family: var(--font-ui); font-size: var(--t-xs); color: var(--ink-muted); margin-top: 0.15rem; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-hl { background: #fef08a; color: #713f12; border-radius: 2px; padding: 0 1px; font-style: normal; }
+
+/* ── Grouped results (CoP search chapters) ── */
+.search-group { margin-top: 0.35rem; }
+.search-group + .search-group { margin-top: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.35rem; }
+.search-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0.6rem 0.3rem;
+}
+.search-group-label {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-faint);
+}
+.search-group-count {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 600;
+  color: var(--surface);
+  background: var(--ink-faint);
+  border-radius: 8px;
+  padding: 0 5px;
+  line-height: 1.5;
+}
+
+/* Extra (hidden) result items revealed by "Show more" */
+.search-extra-item { display: contents; } /* transparent wrapper — no layout effect */
+.search-extra-hidden { display: none !important; }
+
+.search-show-more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: auto;
+  margin: 0.25rem 0.6rem 0.1rem;
+  padding: 0.2rem 0.4rem;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--brand);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+.search-show-more-btn:hover { background: var(--brand-light); }
+.search-show-more-btn .fas { font-size: 0.7em; }
+
+/* Typo-correction banner */
+.search-correction {
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  color: var(--ink-muted);
+  padding: 0.35rem 0.6rem;
+  background: #fefce8;
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.25rem;
+}
+.search-correction-term { color: var(--ink); }
+
+/* ══════════════════════════════════════════════════════════════════
+   Responsive — tablet / mobile  (≤ 920 px)
+   ══════════════════════════════════════════════════════════════════ */
+@media (max-width: 920px) {
+
+  /* ── TOC becomes an off-canvas drawer ── */
+  .toc {
+    /* Mobile drawer always fully opaque with background — fade effect is desktop-only */
+    opacity: 1;
+    background: var(--surface-toc);
+    border-right-color: var(--border);
+    transition: none;
+  }
+  .toc:hover,
+  .toc:focus-within { opacity: 1; background: var(--surface-toc); }
+
+  .toc {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 1200;   /* above playlist panel (500) and comparison modal (1000) */
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    width: min(280px, 86vw);
+    box-shadow: var(--shadow-md);
+  }
+  .toc.toc-open { transform: translateX(0); }
+  .toc-overlay { z-index: 1199; }
+
+  /* ── TOC FAB — floating bottom-right on mobile ── */
+  .toc-fab {
+    display: flex;
+    bottom: var(--fab-inset);
+    top: auto;
+    right: var(--fab-inset);
+    width: var(--fab-size);
+    height: var(--fab-size);
+    border-radius: 50%;
+    background: var(--brand);
+    color: #fff;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.28);
+    font-size: 1.1rem;
+    /* Below the peek tray (300) — the tray already covers this corner when
+       open, and staying a real z-index rather than an opacity toggle means a
+       minimized (36px-wide) tray, which doesn't reach this corner at all,
+       leaves the FAB visible and clickable instead of hiding it for nothing. */
+    z-index: 290;
+  }
+  .toc-fab:hover  { background: #2e6ab8; }
+  .toc-fab:active { transform: scale(0.93); }
+
+  /* ── Search button — floating above TOC FAB on mobile ── */
+  .search-btn {
+    position: fixed;
+    bottom: calc(var(--fab-inset) + var(--fab-size) + var(--fab-gap));
+    top: auto;
+    right: var(--fab-inset);
+    left: auto;
+    width: var(--fab-size);
+    height: var(--fab-size);
+    border-radius: 50%;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--brand);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+    transform: none;
+    /* Below the peek tray — see .toc-fab above. */
+    z-index: 290;
+  }
+  /* The desktop rules above style the dark header bar (translucent white on
+     hover/active); this circular FAB is white-on-white, so touch's sticky
+     :hover (and the real "tray is open" active state) must keep the resting
+     white/blue look instead of washing out near-invisible. */
+  .search-btn:hover,
+  .search-btn-active {
+    background: var(--surface);
+    color: var(--brand);
+  }
+  .search-btn-text { display: none; }
+  .search-kbd { display: none; }
+
+  /* Object pages' static header search link (NavHeader's searchHref prop) —
+     unlike the rule above, this element exists in the DOM unconditionally, so
+     without this it would turn into a second floating circle stacked above
+     the TOC FAB. These pages already have search inside the TOC drawer (see
+     objectToc() in object-pages.ts); layout--single's --fab-stack-h only
+     budgets room for the one FAB. ID beats the .search-btn rule above on
+     specificity regardless of source order. */
+  #navSearchBtn { display: none; }
+
+  /* ── Main document panel ── */
+  /* The FAB column appears here and reaches higher than the chat pill, so raise
+     the stack height the padding is derived from. Two values: the explorer and
+     the CoP pages boot search, which puts a second FAB above the TOC one;
+     single-item and object pages carry the TOC FAB alone. */
+  .layout        { --fab-stack-h: calc(var(--fab-inset) + var(--fab-size) * 2 + var(--fab-gap)); }
+  .layout--single { --fab-stack-h: calc(var(--fab-inset) + var(--fab-size)); }
+  .document { padding: var(--sp-6) 1.1rem calc(var(--fab-stack-h) + var(--sp-10)); }
+  body.peek-open .document { padding-right: 1.1rem; }
+  body.peek-open.peek-min .document { padding-right: 1.1rem; }
+  body.peek-open .document > .document-inner { min-width: 0; }
+
+  /* ── Site header ── */
+  .site-header { padding: 0 1rem; }
+  /* Only a hair smaller than desktop: the global nav is a hamburger at this
+     width, so the logo is the header's whole identity and can afford the room. */
+  .site-header-logo img { height: 34px; }
+
+  /* ── Nav header — stays as row, scrolls horizontally on overflow ── */
+  .header { overflow-x: auto; overflow-y: hidden; justify-content: flex-start !important; }
+  /* Trailing room so the last tab (the Implementing Acts trigger) can scroll
+     clear of the viewport edge instead of sitting flush against it. */
+  .header-doc-tabs { padding-right: var(--sp-5); }
+  .header-doc-tab { padding: 0 var(--sp-3); font-size: 0.72rem; }
+  /* JS positions this fixed on mobile; cap it so a long label can never make it
+     wider than the viewport. */
+  .header-dropdown-menu { max-width: calc(100vw - 16px); }
+  .header-dropdown-item { white-space: normal; }
+  .search-tray-inner { padding: 0.6rem 0.75rem 0.4rem; }
+
+  /* ── Para indentation — tighten on narrow screens ── */
+  .para.depth-1 { padding-left: var(--sp-4); }
+  .para.depth-2 { padding-left: var(--sp-8); }
+  .para.depth-3 { padding-left: var(--sp-10); }
+
+  /* ── Term tooltip — narrower on mobile ── */
+  .term-tip { width: min(280px, calc(100vw - 16px)); }
+
+  /* ── Single page nav ── */
+  .single-nav { flex-direction: column; }
+  .single-nav-btn { max-width: 100%; width: 100%; }
+  .single-nav-btn.nav-next { margin-left: 0; }
+
+  /* ── Comparison modal — full screen ── */
+  .cmp-modal {
+    width: 100vw;
+    max-height: 90vh;
+    border-radius: 0;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Responsive — small phones  (≤ 480 px)
+   ══════════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  html { font-size: 15px; }
+  /* Match the tablet side padding (1.1rem) rather than narrowing it further on phones.
+     Bottom keeps the FAB-derived clearance set in the ≤920px block. */
+  .document { padding: var(--sp-4) 1.1rem calc(var(--fab-stack-h) + var(--sp-10)); }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Peek Tray — sliding quick-view panel
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── Tray panel ─────────────────────────────────────────────────── */
+.peek-tray {
+  position: fixed;
+  top: var(--total-header-h);
+  right: 0;
+  width: 540px;
+  /* svh for the same reason body uses it — vh would run the tray's foot below
+     the visible viewport on mobile, taking its last line of text with it. */
+  height: calc(100svh - var(--total-header-h));
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -6px 0 28px rgba(0,0,0,0.11);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(calc(100% + 2px));
+  transition: transform 0.22s cubic-bezier(0.4,0,0.2,1), width 0.22s cubic-bezier(0.4,0,0.2,1);
+  z-index: 300;
+  overflow: hidden;
+}
+.peek-tray.open { transform: translateX(0); }
+/* While drag-resizing, suppress the tray's width transition so it tracks the cursor 1:1
+   (content padding is fixed, so .document needs no override). */
+body.peek-resizing .peek-tray { transition: none !important; }
+
+.peek-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface-subtle);
+  gap: var(--sp-3);
+}
+.peek-tray-label {
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* Right-hand group (minimise + close) sits at the far edge; the open-page and
+   copy buttons stay left-aligned next to the title. */
+.peek-tray-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+/* Tray header buttons are always visible and have no left margin */
+.peek-tray-header .open-page-btn,
+.peek-tray-header .copy-url-btn {
+  opacity: 1;
+  margin-left: 0;
+  flex-shrink: 0;
+}
+/* Close + minimise: identical borderless icon buttons (same size). */
+.peek-tray-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 0.1s, background 0.1s;
+}
+.peek-tray-close:hover { color: var(--heading); background: var(--surface-hover); }
+
+.peek-tray-body {
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--sp-4) var(--sp-5);
+}
+/* Reduce top margin on first item heading — no big gap needed at top of tray */
+.peek-document-inner section:first-child .item-heading,
+.peek-document-inner .chapter-block + section .item-heading {
+  margin-top: var(--sp-6) !important;
+}
+.peek-document-inner section:first-of-type .item-heading {
+  margin-top: 0 !important;
+}
+/* Chapter/section labels inside tray — slightly smaller */
+.peek-document-inner .chapter-block { margin-bottom: var(--sp-4); }
+.peek-document-inner .chapter-label { font-size: var(--t-xs); }
+.peek-document-inner .chapter-title { font-size: var(--t-md); }
+
+
+.peek-empty {
+  color: var(--ink-muted);
+  font-style: italic;
+  padding: var(--sp-2);
+}
+
+/* ── Hover chip ─────────────────────────────────────────────────── */
+.peek-chip {
+  position: fixed;
+  z-index: 400;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.peek-chip.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.peek-chip-row {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  font-weight: 600;
+  color: #f3f4f6;
+  background: #1f2937;
+  border: none;
+  padding: 5px 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  width: 100%;
+  transition: background 0.1s;
+}
+.peek-chip-row:hover { background: #374151; }
+.peek-chip-row i { font-size: 0.6rem; width: 0.75rem; text-align: center; flex-shrink: 0; }
+.peek-chip-action { flex: 1; text-align: left; }
+.peek-chip-key {
+  font-size: var(--t-3xs);
+  font-weight: 400;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+.peek-chip-divider { height: 1px; background: #374151; }
+
+/* ── Mobile tap menu — same dark chip style as desktop hover chip ── */
+.peek-tap-menu {
+  position: fixed;
+  z-index: 500;
+  min-width: 150px;
+  background: #1f2937;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.peek-tap-menu.visible {
+  display: flex;
+}
+.peek-tap-btn {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #e5e7eb;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.42rem 0.65rem;
+  text-align: left;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+.peek-tap-btn:active { background: #374151; }
+.peek-tap-btn i { font-size: 0.6rem; width: 0.75rem; text-align: center; flex-shrink: 0; color: #9ca3af; }
+.peek-tap-goto { color: #e5e7eb; }
+.peek-tap-goto i { color: #9ca3af; }
+.peek-tap-divider {
+  height: 1px;
+  background: #374151;
+}
+
+/* ── Back-to-overview floating button ──────────────────────────── */
+.back-to-overview-btn {
+  position: fixed;
+  top: calc(var(--total-header-h) + 2.5rem);
+  /* Centre within the visible content column — between the TOC sidebar and the
+     open peek tray — rather than the whole viewport, so the peek bar can't cover
+     it on narrower desktop widths. left/right bound the column; margin auto centres. */
+  left: var(--toc-w, 0px);
+  right: var(--peek-tray-w, 0px);
+  margin-inline: auto;
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.5rem 1.1rem 0.5rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2rem;
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.10);
+  z-index: 250;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px) translateZ(0);
+  will-change: opacity, transform;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.18s, transform 0.18s, background 0.1s, color 0.1s, border-color 0.1s;
+  white-space: nowrap;
+}
+.back-to-overview-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) translateZ(0);
+}
+.back-to-overview-btn:hover {
+  background: #dde8f7;
+  border-color: rgba(59,123,206,0.35);
+  color: var(--brand);
+}
+.back-to-overview-btn i { font-size: 0.75em; }
+
+@media (max-width: 920px) {
+  .back-to-overview-btn {
+    left: 1rem;
+    right: auto;
+    margin-inline: 0;
+    font-size: var(--t-3xs);
+    padding: 0.32rem 0.65rem 0.32rem 0.55rem;
+    transform: translateY(-6px) translateZ(0);
+  }
+  .back-to-overview-btn.visible {
+    transform: translateY(0) translateZ(0);
+  }
+}
+
+/* ── Anchor flash highlight ─────────────────────────────────────── */
+@keyframes anchor-flash {
+  0%   { background-color: transparent; }
+  15%  { background-color: rgba(219, 234, 254, 0.45); }
+  60%  { background-color: rgba(219, 234, 254, 0.45); }
+  100% { background-color: transparent; }
+}
+.anchor-flash { animation: anchor-flash 1.5s ease-out forwards; }
+
+/* ── Peek tray drag-resize handle (desktop only) ────────────────── */
+.peek-tray-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -16px;
+  width: 32px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+.peek-tray-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 15px;   /* centred on the tray's left border */
+  width: 2px;
+  height: 100%;
+  background: var(--brand);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.peek-tray-resize-handle:hover::after { opacity: 0.35; }
+
+/* ── Snap-to-min/max controls (left edge, vertically centred) ──── */
+.peek-tray-snap {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  z-index: 11;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  overflow: hidden;
+  box-shadow: -1px 0 6px rgba(0,0,0,0.10);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+/* Reveal on tray hover (and keep visible while interacting with the buttons) */
+.peek-tray:hover .peek-tray-snap,
+.peek-tray-snap:hover { opacity: 1; }
+.peek-tray-snap-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: var(--surface-subtle);
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  transition: background 0.12s, color 0.12s;
+}
+.peek-tray-snap-btn:hover { background: var(--brand); color: #fff; }
+.peek-tray-snap-btn + .peek-tray-snap-btn { border-top: 1px solid var(--border); }
+/* No snap controls when minimised, and never on mobile (the minimise/expand tab
+   replaces resizing there). */
+.peek-tray.minimized .peek-tray-snap { display: none; }
+@media (max-width: 640px) { .peek-tray-snap { display: none; } }
+
+/* ── Mobile — tray slides in from the right, no layout shift ────── */
+@media (max-width: 640px) {
+  .peek-tray {
+    width: 90vw;
+    /* Right-aligned, not centered: the 10vw sliver on the left stays over the
+       document so the reader can keep scrolling it while the tray is open,
+       and it matches .peek-tray.minimized (also right:0) — sharing one
+       anchor means the open↔minimized transition only ever animates width,
+       never flips which edge is doing the moving. Desktop's `right: 0` is
+       inherited here on purpose; do not add a `left` to "center" this. */
+    top: var(--total-header-h);
+    bottom: 0;
+    /* Matches the desktop rule above: pinned under both header bars, never
+       covering the document nav tab strip beneath them. 85vh was a fixed
+       guess that both bled under the site header (behind it on z-index, but
+       tall enough to be visible past its edge) and covered the doc nav.
+       The -1px keeps border-top from sitting exactly flush on the header's
+       bottom edge (box-sizing: border-box already keeps it inside the box —
+       this is about the shared boundary line, not the border's box model). */
+    height: calc(100svh - var(--total-header-h) - 1px);
+    transform: translateX(calc(100% + 2px));
+    border-left: 1px solid var(--border);
+    border-top: 1px solid var(--border);
+    box-shadow: -6px 0 28px rgba(0,0,0,0.13);
+  }
+  .peek-tray.open { transform: translateX(0); }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Overview hero image layout
+   ══════════════════════════════════════════════════════════════════ */
+.ov-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 2.5rem;
+}
+.ov-hero-img { flex-shrink: 0; }
+/* The hero cover and the header logo are <picture> elements (WebP + fallback)
+   since 2026-09-02. `display: contents` removes the wrapper's own box so the
+   <img> keeps being the flex item / block child the rules below were written
+   for — an inline <picture> would add a line-box descender gap under it. */
+.ov-hero-img picture, .site-header-logo picture { display: contents; }
+.ov-hero-img img {
+  width: 180px;
+  height: 180px;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  display: block;
+}
+.ov-hero-text { flex: 1; min-width: 0; }
+@media (max-width: 640px) {
+  .ov-hero { flex-direction: column; gap: 1.25rem; }
+  .ov-hero-img img { width: 120px; height: 120px; }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Feedback toast + tab
+   ══════════════════════════════════════════════════════════════════ */
+.feedback-toast { /* below the peek tray (300) but above ordinary content, so an open tray covers it and a minimized one doesn't */
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) translateX(0);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 1.1rem 2rem 1.1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 180px;
+  z-index: 290;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.feedback-toast.hidden {
+  opacity: 0;
+  transform: translateY(-50%) translateX(100%);
+  pointer-events: none;
+}
+.feedback-toast-icon {
+  color: var(--brand);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.feedback-toast-body { width: 100%; min-width: 0; }
+.feedback-toast-title {
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 0.2rem;
+}
+.feedback-toast-text {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+.feedback-toast-link {
+  color: var(--brand);
+  font-weight: 600;
+}
+.feedback-toast-close {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 1rem;
+  padding: 0.35rem;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  transition: color 0.1s;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.feedback-toast-close:hover { color: var(--ink); }
+
+.feedback-tab {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  padding: 1rem 0.45rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  z-index: 290; /* below the peek tray — see .feedback-toast above */
+  transition: background 0.12s, opacity 0.2s;
+  opacity: 0;
+  pointer-events: none;
+}
+/* The icon doesn't read well vertically — hide it, the label is sufficient */
+.feedback-tab i { display: none; }
+.feedback-tab.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.feedback-tab:hover { background: #2e6ab8; }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Mobile: first-tap reveals heading action buttons
+   ══════════════════════════════════════════════════════════════════ */
+/* On mobile (coarse pointer), buttons stay hidden until tapped once.
+   JS adds .btns-revealed to the heading; a second tap then fires the action. */
+@media (pointer: coarse) {
+  .item-heading.btns-revealed .copy-url-btn,
+  .item-heading.btns-revealed .open-page-btn,
+  .item-heading.btns-revealed .open-peek-btn,
+  .item-heading.btns-revealed .ask-ai-btn,
+  .recital-header.btns-revealed .copy-url-btn,
+  .recital-header.btns-revealed .open-page-btn,
+  .recital-header.btns-revealed .open-peek-btn,
+  .recital-header.btns-revealed .ask-ai-btn { opacity: 1; }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Side-peek: minimize button + collapsed tab (desktop + mobile)
+   ══════════════════════════════════════════════════════════════════ */
+/* Minimize button: sits in the header actions, just left of the close (×).
+   Borderless icon button to match the copy / close controls. */
+.peek-tray-minimize {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: color 0.12s, background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.peek-tray-minimize:hover { color: var(--heading); background: var(--surface-hover); }
+
+/* Collapsed tab (shown only when .minimized) */
+.peek-tray-tab {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.peek-tray-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.6rem 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--brand);
+  cursor: pointer;
+  font-size: 0.75rem;
+  -webkit-tap-highlight-color: transparent;
+}
+.peek-tray-tab-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: 0.75rem 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 160px;
+  white-space: nowrap;
+}
+
+/* Minimised: collapses to a narrow tab on the right viewport edge (all widths) */
+.peek-tray.minimized {
+  width: 36px !important;
+  height: auto;
+  top: calc(var(--total-header-h) + 4rem);
+  bottom: auto;
+  right: 0;
+  left: auto;
+  transform: none !important;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-right: none;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  box-shadow: -4px 0 16px rgba(0,0,0,0.12);
+}
+.peek-tray.minimized .peek-tray-header,
+.peek-tray.minimized .peek-tray-body,
+.peek-tray.minimized .peek-tray-resize-handle { display: none; }
+.peek-tray.minimized .peek-tray-tab { display: flex; }
+
+/* ── Search results: Option A layout ──────────────────────────────────────── */
+.search-section { margin-bottom: 8px; }
+/* Dotted rule between adjacent search sections (Articles & Annexes ↔ Mentions) */
+.search-section + .search-section {
+  border-top: 1px dotted var(--border);
+  padding-top: 4px;
+  margin-top: 4px;
+}
+/* Yellow callout for concept-expansion results */
+.search-concept-section {
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.6rem 0.55rem;
+}
+/* "Related EU AI Act terminology" heading — large + black at 80% with multiply so
+   the yellow callout bleeds through, for prominence. */
+.search-concept-label {
+  font-family: var(--font-ui);
+  font-size: var(--t-base);
+  font-weight: 700;
+  color: #000;
+  opacity: 0.8;
+  mix-blend-mode: multiply;
+  margin-bottom: 0.4rem;
+}
+.search-concept-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.85rem;
+}
+/* Matched terms render as clickable links that replace the query when clicked */
+.search-concept-term {
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--brand);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.search-concept-term:hover { text-decoration: none; }
+.search-section-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  opacity: 0.65;
+  padding: 10px 4px 6px;
+}
+/* Parent (title/heading) result: distinct from paragraph mentions */
+.search-result-parent {
+  border-left: 3px solid var(--brand);
+  background: color-mix(in srgb, var(--brand) 6%, transparent);
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+.search-result-parent + .search-result-parent { margin-top: 2px; }
+.search-result-parent .search-result-label { font-weight: 700; color: var(--heading); }
+/* Location chip on a child (mention) result, e.g. "Article 3, paragraph 28a" */
+.search-loc {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  background: color-mix(in srgb, #000 6%, transparent);
+  border-radius: 4px;
+  padding: 1px 7px;
+  margin-bottom: 4px;
+}
+/* "Approximate matches" divider before fuzzy results */
+.search-approx-divider {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink);
+  opacity: 0.6;
+  padding: 10px 4px 6px;
+  border-top: 1px dashed var(--border);
+  margin-top: 6px;
+}
+.search-subsection-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+  opacity: 0.5;
+  padding: 8px 4px 4px;
+  border-top: 1px dashed var(--border);
+  margin-top: 4px;
+}
+/* No top border / margin on the FIRST subsection so it sits flush under the section label. */
+.search-section > .search-subsection-label:first-of-type {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 4px;
+}
+.search-more-wrap { display: contents; }
+.search-child-group { margin-bottom: 6px; }
+.search-child-group-heading {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--heading);
+  padding: 8px 4px 2px;
+  display: block;
+  text-decoration: none;
+}
+/* Object title links to that object's heading in the explorer */
+a.search-child-group-heading { cursor: pointer; }
+a.search-child-group-heading:hover { color: var(--brand); text-decoration: underline; }
+.search-result-child {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding-top: 0.18rem;
+  padding-bottom: 0.18rem;
+}
+.search-result-child .search-result-snippet { margin-top: 0; flex: 1 1 auto; }
+
+/* ── Single-result child groups: heading + row inline ───────────────────── */
+/* When a group has exactly one search-result-item and no expander
+   (.search-more-wrap), lay the heading + row out as a flex row so a
+   single result doesn't stack vertically and waste vertical space.
+   Note: can't use :only-of-type — the heading is now also an <a>, so we test
+   "has a result item but not a second one" to count by class instead of tag. */
+.search-child-group:not(:has(.search-more-wrap)):has(> .search-result-item):not(:has(> .search-result-item ~ .search-result-item)) {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.2rem;
+}
+.search-child-group:not(:has(.search-more-wrap)):has(> .search-result-item):not(:has(> .search-result-item ~ .search-result-item)) > .search-child-group-heading {
+  padding-top: 0;
+  padding-bottom: 0;
+  flex: 0 0 auto;
+}
+.search-child-group:not(:has(.search-more-wrap)):has(> .search-result-item):not(:has(> .search-result-item ~ .search-result-item)) > .search-result-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.search-result-child .search-loc { margin-bottom: 0; flex: 0 0 auto; }
+
+/* ── Digital Omnibus amendments ───────────────────────────────────────────
+   Deliberately small: an amendment marker sits beside body text on every
+   affected paragraph, so it earns as little horizontal space as possible. One
+   control per paragraph, a single short word, in the existing action gutter. */
+.para.om-amended > .para-text { box-shadow: inset 2px 0 0 var(--brand); padding-left: 0.6rem; }
+.para.om-delete > .para-text { box-shadow: inset 2px 0 0 #b91c1c; }
+.para.om-insert > .para-text,
+.para.om-insert_item > .para-text { box-shadow: inset 2px 0 0 #15803d; }
+
+/* Archived wording reads as inactive: grey, not the body ink. */
+.para.om-showing-old > .para-text.om-old {
+  background: #fafafa;
+  color: #8a8f98;
+  box-shadow: inset 2px 0 0 #b0b5bd;
+}
+.para.om-showing-old > .para-text.om-old a,
+.para.om-showing-old > .para-text.om-old .term-ref { color: inherit; }
+.para.om-delete.om-showing-old > .para-text.om-old {
+  text-decoration: line-through;
+  text-decoration-color: #b91c1c55;
+}
+
+/* A deleted provision keeps its number and its control so the gap in the Act is
+   visible, but its sub-points collapse entirely — otherwise Article 10 shows a
+   column of empty numbered rows. Revealing the parent reveals the whole group. */
+.para.om-delete.om-group-child:not(.om-showing-old) { display: none; }
+.para.om-delete:not(.om-showing-old) > .para-text.om-old { display: none; }
+
+/* The marker doubles as the toggle. Constant label width, so switching between
+   the two wordings never reflows the paragraph. */
+.om-toggle {
+  font-family: var(--font-ui);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: #eff4fb;
+  color: #3b6ea5;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.om-toggle:hover { border-color: currentColor; }
+.om-toggle[aria-expanded="true"] { background: #6b7280; color: #fff; }
+.om-toggle-icon {
+  font-size: 0.85em;
+  margin-right: 0.25em;
+  /* A quarter turn signals "revert" without animating on every render. */
+  transform: rotate(-45deg);
+  display: inline-block;
+}
+.om-toggle:hover .om-toggle-icon { transform: rotate(-135deg); transition: transform 0.2s ease; }
+.om-toggle-delete { background: #fdeaea; color: #b91c1c; }
+.om-toggle-insert, .om-toggle-insert_item { background: #e9f6ed; color: #15803d; }
+
+/* Keep the marker visible at rest — it is information, not an action — while
+   the hover-only copy button beside it stays hidden until hover. */
+.para-actions .om-toggle { opacity: 1; }
+
+/* Compact notice above the document. */
+.ov-omnibus-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+  margin: 1rem 0;
+  padding: 0.5rem 0.7rem;
+  border-left: 2px solid var(--brand);
+  background: var(--surface);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.ov-omnibus-text { color: var(--ink); flex: 1 1 22rem; }
+.ov-omnibus-text strong { color: var(--heading); font-weight: 600; }
+.om-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.om-view-toggle input { margin: 0; }
+
+/* Stand-in for a provision that did not exist before the amendment. */
+.om-absent {
+  font-style: italic;
+  color: #9ca3af;
+  font-size: 0.85em;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Paragraph action sheet (touch only)
+   ══════════════════════════════════════════════════════════════════ */
+/* On a pointer device the action rail beside each paragraph is free: the
+   pointer crosses the paragraph as a side effect of reading, so the reveal
+   costs the reader nothing and lands exactly on attention. Touch has no such
+   gesture — a tap is deliberate, so the rail is both undiscovered and, at
+   89px of a 357px line (148px where an Omnibus badge sits), the reason mobile
+   body text renders at 24–33 characters where 45–75 is readable.
+   So on touch the rail is dropped and its actions move into a bottom sheet
+   raised by tapping the paragraph. Text goes full width and, because the
+   sheet has room for words, the actions arrive named rather than as three
+   glyphs. */
+@media (hover: none) {
+  .para-actions { display: none; }
+  /* The tap target is the paragraph itself, so suppress the grey flash iOS
+     paints over the whole block — the sheet is the feedback. */
+  .para { -webkit-tap-highlight-color: transparent; }
+  /* Which paragraph did I hit: the source stays lit while the scrim dims the
+     rest, so the answer arrives before the citation is read.
+     A shaded, rounded block and deliberately NO left rule — an inset left rule
+     is how an Omnibus amendment is marked (.para.om-amended > .para-text), and
+     a selection that borrowed it read as "this paragraph was amended".
+     It sits on .para rather than .para-text so it covers the paragraph number
+     too — that number is part of the citation in the sheet header — and so it
+     never has to compose with the amendment rule on the text.
+     The spread shadow gives the shading breathing room around the text without
+     adding padding, which would reflow the line the reader just tapped. */
+  .para.para-sheet-source,
+  #document .item-heading.para-sheet-source,
+  #document .recital-header.para-sheet-source {
+    background: var(--brand-light);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 4px var(--brand-light);
+  }
+}
+
+.para-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.32);
+  z-index: 980;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  /* The sheet is the only thing meant to scroll while it is up. */
+  touch-action: none;
+}
+.para-sheet-scrim.open { opacity: 1; }
+
+.para-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 981;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -6px 28px rgba(0,0,0,0.16);
+  /* Tall action sets (an amended paragraph carries four) still fit; anything
+     longer scrolls inside the sheet rather than growing past the viewport. */
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
+  transform: translateY(calc(100% + 2px));
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  /* Home-indicator clearance on notched phones. */
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.para-sheet.open { transform: translateY(0); }
+
+/* Grab handle: the standard "this sheet dismisses downward" affordance. */
+.para-sheet-grab {
+  width: 2.25rem;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 0.55rem auto 0.15rem;
+  flex-shrink: 0;
+}
+
+.para-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.para-sheet-headings { flex: 1; min-width: 0; }
+.para-sheet-cite {
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  color: var(--heading);
+  margin: 0;
+  line-height: 1.3;
+}
+/* Replaces the 55px "AMENDED" badge the rail used to carry. A colour alone
+   cannot say which of insert / replace / delete applied, and the sheet has the
+   room the rail did not, so the status is spelled out here instead. */
+/* Chip + hint sit on one line, wrapping to two on a narrow phone. */
+.para-sheet-statusrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0;
+}
+/* Which act changed this provision and when it took effect. The chip alone
+   says "amended" without saying by what — and in a legal reference tool that
+   is the question a reader actually has. */
+.para-sheet-hint {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  color: var(--ink-faint);
+  line-height: 1.3;
+  min-width: 0;
+}
+.para-sheet-status {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1;
+  margin: 0;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: #eff4fb;
+  color: #3b6ea5;
+}
+.para-sheet-status[data-om-op="delete"] { background: #fdeaea; color: #b91c1c; }
+.para-sheet-status[data-om-op="insert"],
+.para-sheet-status[data-om-op="insert_item"] { background: #e9f6ed; color: #15803d; }
+
+.para-sheet-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--ink-faint);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.para-sheet-close:hover { color: var(--heading); background: var(--surface-hover); }
+
+.para-sheet-actions {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2) 0 var(--sp-3);
+  overflow-y: auto;
+}
+.para-sheet-action {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  /* 48px minimum — these are the primary targets now, not 24px icons. */
+  min-height: 3rem;
+  padding: 0.5rem var(--sp-4);
+  background: none;
+  border: none;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  color: var(--heading);
+  cursor: pointer;
+}
+.para-sheet-action:active { background: var(--surface-hover); }
+.para-sheet-action .para-sheet-icon {
+  flex-shrink: 0;
+  width: 1.75rem;
+  text-align: center;
+  color: var(--brand);
+  font-size: 0.95rem;
+}
+.para-sheet-action-label { flex: 1; min-width: 0; }
+/* The rail's labels are the sheet's labels — see buildSheetActions(). Some are
+   lower-case vocabulary ("original"), which reads as a fragment at the head of
+   a row. */
+.para-sheet-action-label::first-letter { text-transform: uppercase; }
+.para-sheet-action.done .para-sheet-icon,
+.para-sheet-action.done .para-sheet-action-label { color: #22c55e; }
+
+/* While the sheet is up it owns the bottom of the screen. Everything else that
+   floats there — the chat pill, the feedback toast, the FAB column, the
+   back-to-overview pill — sits above it in the stack (chat alone is at 1300)
+   and would otherwise print straight over the action rows. Hidden rather than
+   re-stacked: they are all dismissible chrome, and the sheet is modal. */
+body.para-sheet-open .aui-modal-anchor,
+body.para-sheet-open .feedback-toast,
+body.para-sheet-open .feedback-tab,
+body.para-sheet-open .toc-fab,
+body.para-sheet-open .search-fab,
+body.para-sheet-open .back-to-overview-btn {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* The feedback toast/tab and the mobile FABs used to be forced invisible
+   whenever body.peek-open was set — but that class stays on the whole time
+   the tray is minimized too (only the tray's own .minimized class changes),
+   so they stayed hidden even collapsed down to a 36px edge tab with nothing
+   left to overlap. Their z-index (below) now does the same job passively:
+   sitting under the peek tray's 300 means an open tray naturally covers
+   them, and a minimized one — far too small to reach them — doesn't. See
+   .feedback-toast / .feedback-tab / the mobile .toc-fab / .search-btn rules
+   for the actual z-index: 290. */
+
+/* Focus is moved into the sheet programmatically so the dialog is announced and
+   Esc/Tab land inside it. That is not a user-driven focus, so it should not
+   paint a ring around the whole sheet — the rows keep theirs for keyboard use. */
+.para-sheet:focus { outline: none; }
+.para-sheet-action:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+/* ── Article / recital headings on touch ─────────────────────────────────── */
+/* The heading row spent 257px of a 357px line on four controls — "Open as page"
+   and "Open in side peek" carry their labels inline — which wrapped
+   "Article 1: Subject Matter" onto a second line. They move into the sheet and
+   leave one "⋯" behind. Scoped to #document so the peek tray's own header
+   buttons, which are always-visible chrome, are untouched. */
+/* Resident on touch only — a pointer device already reveals the real controls
+   on hover, which says more than an ellipsis does. */
+.para-sheet-trigger { display: none; }
+
+@media (hover: none) {
+  #document .item-heading > .open-page-btn,
+  #document .item-heading > .open-peek-btn,
+  #document .item-heading > .ask-ai-btn,
+  #document .item-heading > .copy-url-btn,
+  #document .recital-header > .recital-header-actions { display: none; }
+
+  #document .item-heading,
+  #document .recital-header { -webkit-tap-highlight-color: transparent; }
+
+  .para-sheet-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    /* 44px of touch target from a 24px glyph, without taking 44px of the line:
+       the padding is negative-margined back out. */
+    width: 2.75rem;
+    height: 2.75rem;
+    margin: -0.625rem -0.5rem -0.625rem 0.15rem;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 50%;
+    color: var(--ink-faint);
+    font-size: 0.9rem;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .para-sheet-trigger:active { background: var(--surface-hover); color: var(--brand); }
+}
+.para-sheet-subtitle {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  color: var(--ink);
+  margin: 0.15rem 0 0;
+  line-height: 1.35;
+}
+.para-sheet-subtitle[hidden] { display: none; }

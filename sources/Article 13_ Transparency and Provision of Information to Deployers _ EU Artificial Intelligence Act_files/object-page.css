@@ -1,0 +1,148 @@
+/* Object pages (/article/38/, /recital/1/, /chapter/3/, …) — chrome around
+   the statically rendered provision. Content itself is styled by shared.css. */
+
+.object-topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1.75rem 0 1rem;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+}
+
+/* Static language switcher — every language variant is a pre-built page (see
+   objectLangSwitcherHtml() in object-pages.ts), so this is plain links, no JS.
+   Markup matches the explorer overview's language block exactly (same
+   classes: ov-lang-block / ov-struct-label / lang-switcher-ov / lang-
+   smallprint — see #langSwitcher in src/lib/overview.ts) for visual parity.
+   .lang-switcher-ov and .lang-btn are already in shared.css, which object
+   pages load; .ov-struct-label itself lives in shared-components.css, which
+   they don't (it's ~300 lines of sidebar/features-grid CSS these pages have
+   no other use for) — SYNC just this one small, stable rule instead. */
+.ov-lang-block {
+  margin-bottom: 1rem;
+}
+.ov-struct-label {
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  margin-bottom: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.lang-smallprint {
+  font-family: var(--font-ui);
+  font-size: var(--t-3xs);
+  color: var(--ink-faint);
+  line-height: 1.5;
+  margin-top: 0.5rem;
+}
+
+.object-back {
+  color: var(--brand);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.object-back:hover {
+  text-decoration: underline;
+}
+
+.object-crumbs {
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.object-crumb + .object-crumb::before {
+  content: "›";
+  margin-right: 0.5rem;
+  color: var(--border);
+}
+.object-crumb a {
+  color: var(--ink);
+  text-decoration: none;
+}
+.object-crumb a:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+.object-pagenav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 2.5rem 0 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+}
+
+.object-pagenav-link {
+  color: var(--brand);
+  font-weight: 600;
+  text-decoration: none;
+}
+.object-pagenav-link:hover {
+  text-decoration: underline;
+}
+.object-pagenav-link.explorer {
+  border: 1px solid var(--brand);
+  border-radius: 6px;
+  padding: 0.45rem 0.9rem;
+}
+.object-pagenav-link.explorer:hover {
+  background: var(--brand);
+  color: #fff;
+  text-decoration: none;
+}
+
+/* The explorer button's label is too wide to share a row with prev/next once
+   the content column drops to phone width, so it gets its own row below them. */
+@media (max-width: 640px) {
+  .object-pagenav > *:nth-child(1),
+  .object-pagenav > *:nth-child(3) {
+    flex: 1 1 0;
+  }
+  .object-pagenav > *:nth-child(3) {
+    text-align: right;
+  }
+  .object-pagenav > *:nth-child(2) {
+    order: 3;
+    flex: 1 1 100%;
+    text-align: center;
+  }
+}
+
+/* Chapter / section hub pages */
+.hub-page .chapter-block {
+  margin-top: 1rem;
+}
+.hub-article-list {
+  list-style: none;
+  margin: 0.75rem 0 1.75rem;
+  padding: 0;
+  font-family: var(--font-ui);
+}
+.hub-article-list li {
+  border-bottom: 1px solid var(--border);
+}
+.hub-article-list a {
+  display: block;
+  padding: 0.6rem 0.25rem;
+  color: var(--heading);
+  text-decoration: none;
+}
+.hub-article-list a:hover {
+  color: var(--brand);
+  background: var(--surface);
+}

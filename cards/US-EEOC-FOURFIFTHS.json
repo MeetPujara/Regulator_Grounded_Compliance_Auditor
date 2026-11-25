@@ -1,0 +1,26 @@
+{
+  "id": "US-EEOC-FOURFIFTHS",
+  "jurisdiction": "US",
+  "clause": "29 CFR 1607.4(D)",
+  "source_url": "https://www.ecfr.gov/current/title-29/subtitle-B/chapter-XIV/part-1607/section-1607.4",
+  "source_file": [
+    "*1607*",
+    "*Information*on*impact*"
+  ],
+  "status": "heuristic",
+  "applies_to": [
+    "employment"
+  ],
+  "effective_from": null,
+  "obligation": "A selection rate for any group below four-fifths (80%) of the highest group's rate is generally regarded as evidence of adverse impact.",
+  "caveat": "Employment rule (UGESP), not lending law; used here only as a screening heuristic. Not a bright line: smaller gaps can count if statistically and practically significant, larger gaps may not if the numbers are small.",
+  "test_type": [
+    "ratio_test"
+  ],
+  "threshold": 0.8,
+  "to_verify": [
+    "effective date (published 1978-08-25, amended 1981-12-31)"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

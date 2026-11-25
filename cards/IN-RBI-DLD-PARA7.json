@@ -1,0 +1,26 @@
+{
+  "id": "IN-RBI-DLD-PARA7",
+  "jurisdiction": "IN",
+  "clause": "RBI Digital Lending Directions 2025 (8 May 2025), paragraph 7",
+  "source_url": "https://www.rbi.org.in/",
+  "source_file": [
+    "*Notifications*Reserve*Bank*"
+  ],
+  "status": "regulation",
+  "applies_to": [
+    "lending",
+    "record_keeping"
+  ],
+  "effective_from": "2025-05-08",
+  "obligation": "Lenders must collect and retain the borrower's economic profile, including at minimum age, occupation and income, and must not increase credit limits automatically.",
+  "caveat": "No fairness or bias clause: record-keeping and conduct only. Paragraphs 6 and 17 had a delayed start; the rest applied at once.",
+  "test_type": [
+    "record_keeping"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "exact RBI URL for the Directions"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

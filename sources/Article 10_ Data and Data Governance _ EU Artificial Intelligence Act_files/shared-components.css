@@ -1,0 +1,293 @@
+/* =============================================================================
+   shared-components.css — styles for components shared across page types.
+   =============================================================================
+   Pairs with shared-components.js (the markup factory). Loaded by ExplorerLayout
+   alongside shared.css on every page, so index AND Code of Practice pages render
+   these shared components identically — no duplicated CSS to drift out of sync.
+
+   Currently covers the overview sidebar ("Navigating the Act" + "About this
+   tool"), the overview footer ("Free, independent…" callout + credits), and the
+   two-column overview/sidebar layout.
+   ============================================================================= */
+
+/* ── Overview + sidebar two-column layout ───────────────────────────────── */
+.overview-with-sidebar {
+  display: grid;
+  grid-template-columns: 1fr 268px;
+  gap: 4rem;
+  align-items: start;
+  padding-bottom: 2.5rem;
+  margin-bottom: 4rem;
+  /* Closing divider, drawn as a background stripe rather than border-bottom.
+     The element still spans both columns, but the rule has to stop where the
+     content column stops so it lines up with the dividers stacked above it
+     (.cop-all-wg-wrap's border-bottom, the .ov-struct-label border-tops) —
+     a full-width rule under a 268px sidebar that holds nothing reads as a
+     second, longer divider. Width = 100% minus the sidebar track minus the
+     gap, i.e. the same two values grid-template-columns and gap declare. */
+  background-image: linear-gradient(var(--border), var(--border));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: calc(100% - 268px - 4rem) 2px;
+}
+.ov-sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  margin-top: 0;
+}
+/* One column in the sticky sidebar; two when it stacks. Declared before the
+   container queries below — they carry the same specificity, so a later base
+   rule would silently win over them. */
+.ov-sidebar-inner {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+/* Collapse to a single column (sidebar stacks) when the content container is narrow.
+   Resolves against .document-inner (container-type: inline-size, set in shared.css). */
+@container (max-width: 1000px) {
+  /* One column: the content is the full width again, so is the divider. */
+  .overview-with-sidebar { grid-template-columns: 1fr; background-size: 100% 2px; }
+  .ov-sidebar { position: static; }
+  /* Stacked below the overview the sidebar has the full content width, so its
+     two blocks read better side by side than in one tall column. */
+  .ov-sidebar-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; }
+}
+@container (max-width: 620px) {
+  .ov-sidebar-inner { grid-template-columns: 1fr; gap: 1.5rem; }
+}
+
+/* Post-overview body wrapper — shared readable width */
+.content-constrain { max-width: var(--reading-max); }
+
+/* ── Shared block label ─────────────────────────────────────────────────── */
+.ov-block-label {
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--ink-faint);
+  margin-bottom: 0.6rem;
+}
+
+/* ── "Navigating the Act" nav cards ─────────────────────────────────────── */
+.ov-nav-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.5rem;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ov-nav-card:hover {
+  border-color: var(--brand);
+  background: #f0f6ff;
+  text-decoration: none;
+}
+.ov-nav-card-text {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--heading);
+}
+.ov-nav-card-arrow { font-size: 0.7rem; color: var(--brand); flex-shrink: 0; }
+
+/* ── "About this tool" block (sidebar) ──────────────────────────────────── */
+.ov-about p {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--ink-muted);
+  margin: 0;
+}
+.ov-about p + p { margin-top: 0.6rem; }
+.ov-about a { color: var(--brand); text-decoration: underline; }
+.ov-about a:hover { opacity: 0.8; }
+
+/* ── Overview footer — callout + credits ────────────────────────────────── */
+.ov-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 1.25rem 2.5rem;
+  align-items: start;
+}
+/* Unnamed query — resolves against .document-inner like the rules above. Above
+   this width the footer is at least ~660px wide in both the sidebar-beside and
+   sidebar-stacked states, which comfortably holds two columns. */
+@container (max-width: 620px) {
+  .ov-footer { grid-template-columns: 1fr; }
+}
+.ov-credits {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  line-height: 1.6;
+  color: var(--ink-muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+}
+.ov-credits strong { color: var(--heading); }
+.ov-credits a { color: var(--brand); text-decoration: underline; }
+.ov-credits a:hover { opacity: 0.8; }
+
+/* ── "Free, independent…" callout (minimal — no box) ────────────────────── */
+.ov-callout {
+  padding: 0.25rem 0;
+}
+.ov-callout-heading {
+  font-family: var(--font-ui);
+  font-size: 0.97rem;
+  font-weight: 800;
+  color: var(--heading);
+  margin: 0 0 0.85rem;
+  line-height: 1.3;
+}
+.ov-callout p {
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  line-height: 1.65;
+  color: var(--ink);
+  margin: 0 0 0.75rem;
+}
+.ov-callout p:first-child { font-size: 0.9rem; }
+.ov-callout p:nth-child(2),
+.ov-callout p:nth-child(3) { font-size: 0.75rem; }
+.ov-callout p:last-child { margin-bottom: 0; }
+.ov-callout a { color: var(--brand); text-decoration: underline; }
+.ov-callout a:hover { opacity: 0.8; }
+.ov-callout-attr {
+  font-size: 0.75rem !important;
+  color: var(--ink-faint) !important;
+}
+
+/* ── Overview features grid — "Features of this website" ────────────────────
+   Pairs with buildOvFeatures() in shared-components.js. Lived in
+   index-page.css until the Code of Practice overview started calling the same
+   factory; index-page.css is not loaded on CoP pages, so the rules moved here
+   rather than being copied into cop.css. */
+.ov-struct-label {
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  margin-bottom: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.ov-features {
+  margin-bottom: 2rem;
+  /* Query container so the grid wraps by its own rendered width (reacts to the
+     peek tray + sidebar + viewport). */
+  container: feat / inline-size;
+}
+.ov-features-grid {
+  display: grid;
+  /* Two columns, never four: the rows are single inline paragraphs now, and
+     an odd number of features (5) leaves an orphan in a 4-up grid. Drops to
+     one column in the sidebar, where the column is ~268px wide. */
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-4) var(--sp-5);
+}
+@container feat (max-width: 400px) {
+  .ov-features-grid { grid-template-columns: 1fr; }
+}
+.ov-feature {
+  padding: 0;
+}
+/* Title and description run as one paragraph — the name in bold, then an
+   em dash, then the explanation — so five features cost about as much
+   vertical space as four stacked ones did. Both are still block elements
+   in the markup; only their display changes. */
+.ov-feature {
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+}
+.ov-feature-title {
+  display: inline;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--heading);
+}
+.ov-feature-title::after {
+  content: " — ";
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+.ov-feature-title i {
+  color: var(--brand);
+  margin-right: 0.2em;
+}
+/* Inline icon hints inside feature descriptions */
+.ov-feat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6em;
+  color: var(--ink-faint);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  vertical-align: middle;
+  margin: 0 1px;
+  line-height: 1.6;
+}
+.ov-feature-desc {
+  display: inline;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  color: var(--ink-muted);
+}
+
+/* ── Features grid inside the sidebar ─────────────────────────── */
+/* The aside holds the features as its last block (see buildOvFeatures).
+   In the sticky column that stacks them under "About this tool" and the
+   grid's own `feat` container query collapses it to one card per row;
+   when the column is dropped the aside is full width again and the same
+   grid reads as the four-across strip it was before. */
+.ov-sidebar > .ov-features {
+  margin-top: 1.5rem;
+  margin-bottom: 0;
+}
+/* .ov-struct-label opens every overview block with a rule above it. In the
+   sidebar that reads as a divider between two blocks of the same small
+   column, so drop it there and let the margin above do the separating; the
+   stacked rule below restores it once the features are a full-width band
+   among the other overview blocks. */
+.ov-sidebar > .ov-features > .ov-struct-label {
+  border-top: 0;
+  padding-top: 0;
+  margin-bottom: 0.9rem;
+}
+/* Closing rule under the features — only once the section is one column.
+   In the sticky right column nothing follows the features, so the rule
+   would be a line hanging off the bottom of the sidebar; stacked, it
+   separates them from the "Free, independent…" footer directly below.
+   Matches the .ov-struct-label border that opens each overview block. */
+/* `doc`, not unnamed: .ov-struct-label sits inside .ov-features, which is
+   itself a `feat` container, so an unnamed query would resolve against the
+   268px sidebar column and match at every width. */
+@container doc (max-width: 1000px) {
+  .ov-sidebar > .ov-features {
+    padding-bottom: 1.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .ov-sidebar > .ov-features > .ov-struct-label {
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+    margin-bottom: 1.2rem;
+  }
+}

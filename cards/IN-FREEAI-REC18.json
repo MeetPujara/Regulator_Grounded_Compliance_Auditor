@@ -1,0 +1,27 @@
+{
+  "id": "IN-FREEAI-REC18",
+  "jurisdiction": "IN",
+  "clause": "RBI FREE-AI Committee report (August 2025), Recommendation 18 - Consumer Protection",
+  "source_url": "https://www.rbi.org.in/",
+  "source_file": [
+    "*FREE*AI*",
+    "*FREEAI*"
+  ],
+  "status": "guidance",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": null,
+  "obligation": "Regulated entities should strengthen consumer protection through transparency and fairness in AI-driven decisions.",
+  "caveat": "Guidance, not binding law.",
+  "test_type": [
+    "transparency",
+    "explanation_faithfulness"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "exact RBI URL for the FREE-AI report"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

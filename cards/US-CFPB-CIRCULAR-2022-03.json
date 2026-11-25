@@ -1,0 +1,25 @@
+{
+  "id": "US-CFPB-CIRCULAR-2022-03",
+  "jurisdiction": "US",
+  "clause": "CFPB Circular 2022-03 (26 May 2022)",
+  "source_url": "https://www.consumerfinance.gov/compliance/circulars/circular-2022-03-adverse-action-notification-requirements-in-connection-with-complex-algorithms/",
+  "source_file": [
+    "*2022-03*",
+    "*Circular*2022*",
+    "*circular*"
+  ],
+  "status": "guidance",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": "2022-05-26",
+  "obligation": "Using a complex algorithm does not excuse a creditor from giving specific, accurate reasons for an adverse action.",
+  "caveat": "Regulator guidance, not a statute.",
+  "test_type": [
+    "explanation_faithfulness"
+  ],
+  "threshold": null,
+  "to_verify": [],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

@@ -1,0 +1,62 @@
+{
+  "citation_check": [
+    {
+      "card_id": "EU-AIA-ART10",
+      "exists": true,
+      "pass": true
+    }
+  ],
+  "label_respect_check": [
+    {
+      "card_id": "EU-AIA-ART10",
+      "label": "Not yet in force",
+      "pass": true
+    }
+  ],
+  "evidence_check": [
+    {
+      "card_id": "EU-AIA-ART10",
+      "found_in_source": true,
+      "match_ratio": 1.0,
+      "matched_keywords": [
+        "providers",
+        "high-risk",
+        "systems",
+        "must",
+        "examine",
+        "training",
+        "validation",
+        "testing",
+        "data",
+        "possible",
+        "biases",
+        "address"
+      ],
+      "missing_keywords": [],
+      "source_file": "Regulation_-_EU_-_2024_1689_-_EN_-_EUR-Lex.html",
+      "pass": true
+    },
+    {
+      "card_id": "IN-FREEAI-SUTRA4",
+      "found_in_source": true,
+      "match_ratio": 0.9,
+      "matched_keywords": [
+        "regulated",
+        "entities",
+        "should",
+        "ensure",
+        "their",
+        "systems",
+        "treat",
+        "customers",
+        "fairly"
+      ],
+      "missing_keywords": [
+        "equitably"
+      ],
+      "source_file": "FREEAIR130820250A24FF2D4578453F824C72ED9F5D5851.pdf",
+      "pass": true
+    }
+  ],
+  "overall_pass": true
+}

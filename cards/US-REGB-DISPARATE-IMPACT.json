@@ -1,0 +1,29 @@
+{
+  "id": "US-REGB-DISPARATE-IMPACT",
+  "jurisdiction": "US",
+  "clause": "Regulation B final rule (disparate impact), Federal Register",
+  "source_url": "https://www.federalregister.gov/",
+  "source_file": [
+    "*Federal*Register*",
+    "*disparate*",
+    "*Reg*B*final*"
+  ],
+  "status": "regulation",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": "2026-07-21",
+  "obligation": "This final rule amends Regulation B on disparate impact and takes effect on 21 July 2026.",
+  "caveat": "Only the effective date was transcribed from the source. Do not assert specific obligations from this card without reading the rule.",
+  "test_type": [
+    "ratio_test",
+    "governance"
+  ],
+  "threshold": null,
+  "to_verify": [
+    "exact Federal Register citation and URL",
+    "detailed scope of the amendment"
+  ],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

@@ -1,0 +1,27 @@
+{
+  "id": "EU-AIA-ART10",
+  "jurisdiction": "EU",
+  "clause": "Regulation (EU) 2024/1689, Article 10(2)(f)-(g)",
+  "source_url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+  "source_file": [
+    "*2024_1689*",
+    "*2024*1689*",
+    "*Article*10*"
+  ],
+  "status": "binding_law",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": "2027-12-02",
+  "obligation": "Providers of high-risk AI systems must examine training, validation and testing data for possible biases and address data gaps or shortcomings.",
+  "caveat": "Duty on providers of high-risk systems. For Annex III credit-scoring systems the obligations apply from 2 December 2027.",
+  "test_type": [
+    "ratio_test",
+    "proxy_test",
+    "governance"
+  ],
+  "threshold": null,
+  "to_verify": [],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}

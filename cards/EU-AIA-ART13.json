@@ -1,0 +1,26 @@
+{
+  "id": "EU-AIA-ART13",
+  "jurisdiction": "EU",
+  "clause": "Regulation (EU) 2024/1689, Article 13(1)",
+  "source_url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+  "source_file": [
+    "*2024_1689*",
+    "*2024*1689*",
+    "*Article*13*"
+  ],
+  "status": "binding_law",
+  "applies_to": [
+    "lending"
+  ],
+  "effective_from": "2027-12-02",
+  "obligation": "High-risk AI systems must be sufficiently transparent for deployers to interpret the system's output and use it appropriately.",
+  "caveat": "Duty on providers, owed to deployers; not a direct explanation duty to the applicant.",
+  "test_type": [
+    "transparency",
+    "explanation_faithfulness"
+  ],
+  "threshold": null,
+  "to_verify": [],
+  "applicability_uncertain": false,
+  "retrieved_on": "2026-11-24"
+}
