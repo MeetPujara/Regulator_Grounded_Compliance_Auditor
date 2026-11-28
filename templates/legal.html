@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h2>Legal Intelligence</h2>
+    <p>Retrieve verified rule cards and check jurisdiction, topic, effective date, and applicability deterministically.</p>
+  </div>
+</div>
+
+<!-- Legal Check Controls -->
+<div class="card mb-20">
+  <div class="filter-bar mb-16">
+    <div class="form-group">
+      <label for="legJur">Jurisdiction</label>
+      <select id="legJur" class="form-control">
+        <option value="US">United States (US)</option>
+        <option value="EU">European Union (EU)</option>
+        <option value="IN">India (IN)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="legDate">Audit Date</label>
+      <input type="date" id="legDate" class="form-control" value="{{ default_date }}" />
+    </div>
+    <div class="form-group">
+      <label for="legTestType">Audit Test Type</label>
+      <select id="legTestType" class="form-control">
+        <option value="ratio_test">Group Fairness (ratio_test)</option>
+        <option value="counterfactual">Counterfactual Flip (counterfactual)</option>
+        <option value="proxy_test">Proxy Check (proxy_test)</option>
+        <option value="explanation_faithfulness">Explainability (explanation_faithfulness)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <label class="toggle-label">
+        <input type="checkbox" id="legRunLlm" {% if not sys_status.groq_configured %}disabled{% endif %} />
+        <span>Generate Groq Explanation &amp; Verify{% if not sys_status.groq_configured %} (API key unset){% endif %}</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="form-group mb-16">
+    <label for="legFinding">Audit Finding Text</label>
+    <textarea id="legFinding" class="form-control" rows="2">Under-25 age group was approved at 0.77 times the best group's rate (p=0.0004).</textarea>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+    <button class="btn btn-primary" id="legRunBtn">
+      <i data-lucide="shield-check"></i> Run Legal Check
+    </button>
+    {% if worst_findings %}
+      <span class="text-muted" style="font-size:12.5px;">Quick-fill from <code>fairness_results.csv</code>:</span>
+      {% for f in worst_findings[:3] %}
+        <button class="btn btn-secondary btn-sm quick-finding-btn"
+          data-text="The {{ f.group }} group in {{ f.dataset }} ({{ f.model }}) was approved at {{ '%.2f'|format(f.ratio_vs_best) }} times the best group's rate (n={{ f.n }}). Verdict: {{ f.verdict }}.">
+          {{ f.dataset }} · {{ f.group }} ({{ "%.2f"|format(f.ratio_vs_best) }}×)
+        </button>
+      {% endfor %}
+    {% endif %}
+  </div>
+</div>
+
+<!-- Results -->
+<div id="legResultsWrap" class="hidden mb-20">
+  <div id="legExplanationCard" class="card mb-16 hidden">
+    <div class="card-header">
+      <h3 class="card-title"><i data-lucide="sparkles"></i> Grounded AI Explanation &amp; Citation Verification</h3>
+      <span id="legVerifyBadge" class="badge"></span>
+    </div>
+    <p id="legExplanationText" style="margin:0 0 12px; line-height:1.65; color:var(--navy);"></p>
+    <div id="legVerifyDetails" style="font-size:12.5px; color:var(--text-secondary);"></div>
+  </div>
+
+  <div class="grid-3" id="legCardsGrid"></div>
+</div>
+
+<!-- All 18 Rule Cards Browser -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="library"></i> Verified Rule Card Registry ({{ sys_status.cards_count }} Cards)</h3>
+      <p class="card-subtitle">Each card is hand-checked against official sources in <code>sources/</code></p>
+    </div>
+    <select id="cardBrowserJur" class="form-control" style="width:160px;">
+      <option value="ALL">All Jurisdictions</option>
+      <option value="US">United States (US)</option>
+      <option value="EU">European Union (EU)</option>
+      <option value="IN">India (IN)</option>
+    </select>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Card ID</th>
+          <th>Jurisdiction</th>
+          <th>Clause</th>
+          <th>Effective From</th>
+          <th>Status on Audit Date</th>
+          <th>Obligation</th>
+        </tr>
+      </thead>
+      <tbody id="cardsBrowserBody"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".quick-finding-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.getElementById("legFinding").value = btn.dataset.text;
+    });
+  });
+
+  document.getElementById("legRunBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("legRunBtn");
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/legal/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jurisdiction: document.getElementById("legJur").value,
+          audit_date: document.getElementById("legDate").value,
+          test_type: document.getElementById("legTestType").value,
+          finding_text: document.getElementById("legFinding").value,
+          run_llm: document.getElementById("legRunLlm").checked,
+        }),
+      });
+      const data = await res.json();
+      document.getElementById("legResultsWrap").classList.remove("hidden");
+
+      const expCard = document.getElementById("legExplanationCard");
+      if (data.explanation) {
+        expCard.classList.remove("hidden");
+        document.getElementById("legExplanationText").textContent = data.explanation;
+        const vBadge = document.getElementById("legVerifyBadge");
+        if (data.verification) {
+          vBadge.className = `badge ${data.verification.overall_pass ? "badge-success" : "badge-danger"}`;
+          vBadge.textContent = data.verification.overall_pass ? "Verifier: PASS" : "Verifier: FAIL";
+          document.getElementById("legVerifyDetails").textContent =
+            `Citations checked: ${data.verification.citation_check.length} · Label checks: ${data.verification.label_respect_check.length}`;
+        }
+      } else {
+        expCard.classList.add("hidden");
+      }
+
+      const grid = document.getElementById("legCardsGrid");
+      if (!data.cards.length) {
+        grid.innerHTML = `<div class="alert alert-info">No matching rule cards found for this jurisdiction and test type.</div>`;
+      } else {
+        grid.innerHTML = data.cards.map(item => `
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+              <code style="font-weight:700; color:var(--navy);">${item.card.id}</code>
+              ${RGCA.labelBadge(item.label)}
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${item.card.clause}</div>
+            <div style="font-size:13px; color:var(--navy); margin-bottom:8px;"><strong>Obligation:</strong> ${item.card.obligation}</div>
+            <div style="font-size:12.5px; color:var(--text-secondary); margin-bottom:8px;"><strong>Applicability Check:</strong> ${item.reason}</div>
+            ${item.card.caveat ? `<div style="font-size:12px; color:var(--text-muted); border-top:1px solid var(--border); padding-top:8px;"><strong>Caveat:</strong> ${item.card.caveat}</div>` : ""}
+          </div>
+        `).join("");
+      }
+      RGCA.refreshIcons();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  async function loadCardsRegistry() {
+    const jur = document.getElementById("cardBrowserJur").value;
+    const dt = document.getElementById("legDate").value;
+    const res = await fetch(`/api/cards?jurisdiction=${jur}&audit_date=${dt}`);
+    const data = await res.json();
+    document.getElementById("cardsBrowserBody").innerHTML = data.cards.map(item => `
+      <tr>
+        <td><code><strong>${item.card.id}</strong></code></td>
+        <td><span class="badge badge-neutral">${item.card.jurisdiction}</span></td>
+        <td>${item.card.clause}</td>
+        <td>${item.card.effective_from || "Unspecified"}</td>
+        <td>${RGCA.labelBadge(item.label)}</td>
+        <td style="max-width:380px;">${item.card.obligation}</td>
+      </tr>
+    `).join("");
+  }
+
+  document.getElementById("cardBrowserJur").addEventListener("change", loadCardsRegistry);
+  document.getElementById("legDate").addEventListener("change", loadCardsRegistry);
+  loadCardsRegistry();
+});
+</script>
+{% endblock %}

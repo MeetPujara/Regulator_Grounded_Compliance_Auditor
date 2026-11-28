@@ -258,7 +258,7 @@ This is the part that makes the project more than "a fairness dashboard".
 | Card search | sentence-transformers (`all-MiniLM-L6-v2`) + faiss-cpu, rank-bm25 (hybrid, reciprocal-rank fusion) |
 | Report writing | **Groq** free tier (`llama-3.1-8b-instant`, temperature 0), key in `.env` |
 | Verification | pypdf (PDF text extraction) |
-| UI | Streamlit (demo-first, 4 tabs) |
+| UI | Flask + HTML/CSS/JS + Chart.js + ReportLab (PDF/JSON export) |
 
 ---
 
@@ -288,11 +288,14 @@ rgca/
     applicability.py       pure-code 3-question checker -> 6 labels
     report_writer.py       Groq report writer (prose only, cites card IDs)
     verifier.py            citation + label + evidence-in-source check
-  tests/       ~50 hand-labelled evaluation cases (Step 9)
+  tests/       automated unit & integration tests (tests/test_rgca.py)
   reports/     generated CSVs + verification JSON
-  app.py       Streamlit demo (run from project root)
+  app.py       Flask entry point (run: python app.py -> http://127.0.0.1:5000)
+  web_app.py   Flask routes, APIs, and PDF/JSON report builder
+  templates/   Jinja2 HTML pages
+  static/      CSS & JS assets
   requirements.txt
-  .env         GROQ_API_KEY=...   (git-ignored, never in code)
+  .env.example template for GROQ_API_KEY (copy to .env)
 ```
 
 *Naming rule:* numbered files (`01_`, `03_`, …) are **run**, never imported (Python
@@ -324,12 +327,21 @@ python src\05_scenarios.py
 # 4) rule cards + validation against sources/
 python src\06_write_cards.py
 
-# 5) Groq key (free tier) -> create a .env with:  GROQ_API_KEY=your_key
-#    add .env to .gitignore; never paste the key into code
+# 5) Groq key (optional, free tier) -> copy .env.example to .env and set GROQ_API_KEY=your_key
+#    never paste the key into code
 
-# 6) launch the demo
-streamlit run app.py
+# 6) run automated tests
+python -m unittest tests/test_rgca.py -v
+
+# 7) launch the Flask web application
+python app.py
+# Open http://127.0.0.1:5000 in your browser
 ```
+
+### Troubleshooting (Windows)
+- **`ModuleNotFoundError`**: Ensure your virtual environment is activated and run `python -m pip install -r requirements.txt`.
+- **Groq API disabled**: If `.env` is missing `GROQ_API_KEY`, all deterministic fairness, counterfactual, and legal applicability checks still work; only LLM prose generation is disabled.
+- **Port 5000 in use**: Stop any existing Python/Flask process before running `python app.py`.
 
 First run downloads the MiniLM embedding model (~90 MB, one time).
 

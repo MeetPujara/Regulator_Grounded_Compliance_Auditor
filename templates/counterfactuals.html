@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h2>Counterfactual Fairness Lab</h2>
+    <p>Would the model make a different decision if one protected characteristic changed?</p>
+  </div>
+</div>
+
+<!-- Configuration & Selection -->
+<div class="card mb-20">
+  <div class="filter-bar">
+    <div class="form-group">
+      <label for="cfLabDataset">Dataset</label>
+      <select id="cfLabDataset" class="form-control">
+        {% for k, meta in datasets.items() %}
+          <option value="{{ k }}">{{ meta.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="cfLabModel">ML Model</label>
+      <select id="cfLabModel" class="form-control">
+        {% for k, lbl in models.items() %}
+          <option value="{{ k }}">{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="cfLabApplicant">Applicant ID (Row #)</label>
+      <div style="display:flex; gap:8px;">
+        <input type="number" id="cfLabApplicant" class="form-control" value="0" min="0" style="width:110px;" />
+        <button class="btn btn-secondary btn-sm" id="cfNextRejectedBtn" title="Find next rejected applicant">Next Rejected</button>
+      </div>
+    </div>
+    <div class="form-group" style="flex:1; min-width:220px;">
+      <label for="cfLabFlip">Single Protected Attribute to Modify</label>
+      <select id="cfLabFlip" class="form-control"></select>
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <label class="toggle-label">
+        <input type="checkbox" id="cfLabProtected" checked />
+        <span>Model sees protected traits</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <button class="btn btn-primary" id="cfLabRunBtn">
+        <i data-lucide="play"></i> Run Test
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Side-by-Side Comparison -->
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title"><i data-lucide="user"></i> Original Applicant Profile</h3>
+        <p class="card-subtitle" id="cfLabOrigSub">Loading applicant...</p>
+      </div>
+      <span class="badge" id="cfLabOrigBadge">—</span>
+    </div>
+    <div id="cfLabOrigFeatures" style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; font-size:13px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title"><i data-lucide="git-compare"></i> Counterfactual Comparison</h3>
+        <p class="card-subtitle">Only 1 protected attribute changes; all other features stay constant</p>
+      </div>
+      <span class="badge badge-neutral" id="cfLabChangedBadge">Ready</span>
+    </div>
+
+    <div id="cfLabResultPlaceholder" class="alert alert-info">
+      <i data-lucide="info"></i>
+      <div>Select an applicant and one protected attribute, then click <strong>Run Test</strong> to compare the original and counterfactual predictions side by side.</div>
+    </div>
+
+    <div id="cfLabResultBody" class="hidden">
+      <div class="grid-2 mb-16">
+        <div class="cf-result-card" id="cfLabBeforeCard">
+          <div class="cf-card-label">Original Prediction</div>
+          <div class="cf-card-main" id="cfLabBeforeDec">—</div>
+          <div class="cf-card-sub" id="cfLabBeforeProb">—</div>
+        </div>
+        <div class="cf-result-card" id="cfLabAfterCard">
+          <div class="cf-card-label">Counterfactual Prediction</div>
+          <div class="cf-card-main" id="cfLabAfterDec">—</div>
+          <div class="cf-card-sub" id="cfLabAfterProb">—</div>
+        </div>
+      </div>
+
+      <div style="border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:#F8FAFC; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <span><strong>Changed Attribute:</strong> <span id="cfLabChangedAttr" class="text-danger">—</span></span>
+          <span><strong>Probability Difference:</strong> <span id="cfLabProbDiff">—</span></span>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">
+          All remaining model features were held constant.
+        </div>
+      </div>
+
+      <div id="cfLabExpAlert" class="alert">
+        <i data-lucide="alert-circle"></i>
+        <div id="cfLabExpText"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Aggregate Counterfactual Summary (from reports/counterfactual_flips.csv) -->
+{% if summary_rows %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="layers"></i> Dataset-Wide Counterfactual Flip Rates</h3>
+      <p class="card-subtitle">Pre-computed single-attribute flip rates across all eligible rejected applicants (from <code>reports/counterfactual_flips.csv</code>)</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Dataset</th>
+          <th>Model</th>
+          <th>Variant</th>
+          <th>Flip Test</th>
+          <th>Eligible</th>
+          <th>Flips</th>
+          <th>Flip Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in summary_rows %}
+        <tr>
+          <td>{{ r.dataset }}</td>
+          <td>{{ r.model }}</td>
+          <td><span class="badge {{ 'badge-blue' if r.variant == 'uses_protected' else 'badge-neutral' }}">{{ r.variant }}</span></td>
+          <td><strong>{{ r.flip }}</strong></td>
+          <td>{{ r.n_eligible }}</td>
+          <td>{{ r.n_flips }}</td>
+          <td>{{ "%.2f%%"|format((r.flip_rate or 0) * 100) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const dsEl = document.getElementById("cfLabDataset");
+  const modelEl = document.getElementById("cfLabModel");
+  const idEl = document.getElementById("cfLabApplicant");
+  const flipEl = document.getElementById("cfLabFlip");
+  const protEl = document.getElementById("cfLabProtected");
+  const globalDs = document.getElementById("globalDatasetSelect");
+
+  if (globalDs && [...dsEl.options].some(o => o.value === globalDs.value)) {
+    dsEl.value = globalDs.value;
+  }
+
+  async function loadApplicant() {
+    const rowId = Math.max(0, Number(idEl.value || 0));
+    const params = new URLSearchParams({
+      dataset: dsEl.value,
+      model: modelEl.value,
+      use_protected: protEl.checked ? "true" : "false",
+    });
+    const res = await fetch(`/api/applicant/${rowId}?${params}`);
+    const data = await res.json();
+    if (data.error) {
+      document.getElementById("cfLabOrigSub").textContent = data.error;
+      return;
+    }
+
+    document.getElementById("cfLabOrigSub").textContent =
+      `Applicant #${data.id} · Probability: ${data.prob.toFixed(4)} (cutoff ${data.cutoff})`;
+    const badge = document.getElementById("cfLabOrigBadge");
+    badge.className = `badge ${data.decision === 1 ? "badge-success" : "badge-danger"}`;
+    badge.textContent = data.decision === 1 ? "Approved" : "Rejected";
+
+    const grid = document.getElementById("cfLabOrigFeatures");
+    grid.innerHTML = Object.entries(data.attributes).map(([k, v]) =>
+      `<div style="padding:6px 8px; background:#F8FAFC; border-radius:6px; border:1px solid #F1F5F9;">
+        <span class="text-muted">${k}:</span> <strong>${v}</strong>
+      </div>`
+    ).join("");
+
+    if (!data.flips.length) {
+      flipEl.innerHTML = `<option value="">No valid single-attribute flip</option>`;
+      document.getElementById("cfLabRunBtn").disabled = true;
+    } else {
+      flipEl.innerHTML = data.flips.map(f => `<option value="${f.col}">${f.label}: ${f.old_display} → ${f.new_display}</option>`).join("");
+      document.getElementById("cfLabRunBtn").disabled = false;
+    }
+  }
+
+  document.getElementById("cfNextRejectedBtn").addEventListener("click", async () => {
+    const params = new URLSearchParams({
+      dataset: dsEl.value,
+      model: modelEl.value,
+      use_protected: protEl.checked ? "true" : "false",
+      decision: "rejected",
+      per_page: 50,
+    });
+    const res = await fetch(`/api/applicants?${params}`);
+    const data = await res.json();
+    if (!data.rows.length) return;
+    const cur = Number(idEl.value || 0);
+    const next = data.rows.find(r => r.id > cur) || data.rows[0];
+    idEl.value = next.id;
+    loadApplicant();
+  });
+
+  document.getElementById("cfLabRunBtn").addEventListener("click", async () => {
+    const col = flipEl.value;
+    if (!col) return;
+    const res = await fetch("/api/counterfactual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset: dsEl.value,
+        model: modelEl.value,
+        use_protected: protEl.checked,
+        row_idx: Number(idEl.value || 0),
+        col,
+      }),
+    });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+
+    document.getElementById("cfLabResultPlaceholder").classList.add("hidden");
+    document.getElementById("cfLabResultBody").classList.remove("hidden");
+
+    const chBadge = document.getElementById("cfLabChangedBadge");
+    chBadge.className = `badge ${data.decision_changed ? "badge-warning" : "badge-neutral"}`;
+    chBadge.textContent = data.decision_changed ? "Decision Changed: YES" : "Decision Changed: NO";
+
+    const bCard = document.getElementById("cfLabBeforeCard");
+    bCard.className = `cf-result-card ${data.old_decision === 1 ? "approved" : "rejected"}`;
+    document.getElementById("cfLabBeforeDec").textContent = data.old_decision === 1 ? "✅ Approved" : "❌ Rejected";
+    document.getElementById("cfLabBeforeProb").textContent = `Prob: ${data.old_prob.toFixed(4)}`;
+
+    const aCard = document.getElementById("cfLabAfterCard");
+    aCard.className = `cf-result-card ${data.new_decision === 1 ? "approved" : "rejected"}`;
+    document.getElementById("cfLabAfterDec").textContent = data.new_decision === 1 ? "✅ Approved" : "❌ Rejected";
+    document.getElementById("cfLabAfterProb").textContent = `Prob: ${data.new_prob.toFixed(4)}`;
+
+    document.getElementById("cfLabChangedAttr").textContent = `${data.flip.label} (${data.flip.desc})`;
+    document.getElementById("cfLabProbDiff").textContent = `${data.prob_diff >= 0 ? "+" : ""}${data.prob_diff.toFixed(4)}`;
+
+    const expAlert = document.getElementById("cfLabExpAlert");
+    expAlert.className = `alert ${data.decision_changed ? "alert-warning" : "alert-info"}`;
+    document.getElementById("cfLabExpText").textContent = data.explanation;
+    RGCA.refreshIcons();
+  });
+
+  [dsEl, modelEl, protEl, idEl].forEach(el => {
+    el.addEventListener("change", () => {
+      if (el === dsEl && globalDs) {
+        globalDs.value = dsEl.value;
+        localStorage.setItem("rgca_dataset", dsEl.value);
+      }
+      loadApplicant();
+    });
+  });
+
+  loadApplicant();
+});
+</script>
+{% endblock %}

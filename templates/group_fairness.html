@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h2>Group Fairness Analysis</h2>
+    <p>Understand how model decisions differ across protected groups.</p>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-20">
+  <div class="filter-bar">
+    <div class="form-group">
+      <label for="gfDataset">Dataset</label>
+      <select id="gfDataset" class="form-control">
+        {% for k, meta in datasets.items() %}
+          <option value="{{ k }}">{{ meta.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="gfModel">ML Model</label>
+      <select id="gfModel" class="form-control">
+        {% for k, lbl in models.items() %}
+          <option value="{{ k }}">{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="gfAttr">Protected Attribute</label>
+      <select id="gfAttr" class="form-control">
+        <option value="all">All Protected Attributes</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <label class="toggle-label">
+        <input type="checkbox" id="gfProtected" checked />
+        <span>Model sees protected traits</span>
+      </label>
+    </div>
+  </div>
+</div>
+
+<!-- Main Metric Cards -->
+<div class="grid-5 mb-20">
+  <div class="metric-card">
+    <div class="metric-top">
+      <span class="metric-label">Overall Approval Rate</span>
+      <div class="metric-icon"><i data-lucide="check-circle"></i></div>
+    </div>
+    <div class="metric-value" id="gfOverall">—</div>
+    <div class="metric-foot" id="gfTotalRows">— applicants</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-top">
+      <span class="metric-label">Lowest Group Rate</span>
+      <div class="metric-icon red"><i data-lucide="trending-down"></i></div>
+    </div>
+    <div class="metric-value" id="gfLowest">—</div>
+    <div class="metric-foot">Testable groups (n ≥ 30)</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-top">
+      <span class="metric-label">Highest Group Rate</span>
+      <div class="metric-icon green"><i data-lucide="trending-up"></i></div>
+    </div>
+    <div class="metric-value" id="gfHighest">—</div>
+    <div class="metric-foot">Reference benchmark</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-top">
+      <span class="metric-label">Min Selection Ratio</span>
+      <div class="metric-icon amber"><i data-lucide="scale"></i></div>
+    </div>
+    <div class="metric-value" id="gfMinRatio">—</div>
+    <div class="metric-foot">Screening line: 0.80</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-top">
+      <span class="metric-label">Lowest p-value</span>
+      <div class="metric-icon teal"><i data-lucide="sigma"></i></div>
+    </div>
+    <div class="metric-value" id="gfMinPval">—</div>
+    <div class="metric-foot">Fisher Exact Test (α=0.05)</div>
+  </div>
+</div>
+
+<!-- Fairness Classification Legend -->
+<div class="card mb-20">
+  <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
+    <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center;">
+      <span class="badge badge-success">🟢 Fine · ratio ≥ 0.90</span>
+      <span class="badge badge-warning">🟡 Review · 0.80 ≤ ratio &lt; 0.90</span>
+      <span class="badge badge-danger">🔴 Flag · ratio &lt; 0.80</span>
+      <span class="badge badge-neutral">⚪ Tiny Group · n &lt; 30</span>
+    </div>
+    <span class="text-muted" style="font-size:12.5px;">
+      Note: These are project screening thresholds (inspired by US employment guidelines), not universal legal definitions.
+    </span>
+  </div>
+</div>
+
+<!-- Charts Container -->
+<div id="gfChartsContainer" class="grid-2 mb-20"></div>
+
+<!-- Statistical Analysis Table -->
+<div class="card mb-20">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="table"></i> Statistical Fairness Breakdown</h3>
+      <p class="card-subtitle">Selection rate, ratio vs. best group, Fisher Exact Test p-value, Equal Opportunity gap, and sample size</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Attribute</th>
+          <th>Group</th>
+          <th>Sample Size (n)</th>
+          <th>Selection Rate</th>
+          <th>Ratio vs. Best</th>
+          <th>Fisher p-value</th>
+          <th>Equal Opp. Gap</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody id="gfStatsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Expandable Plain-English Explanation -->
+<div class="card mb-20">
+  <details>
+    <summary style="cursor:pointer; font-weight:600; color:var(--navy); font-size:15px; display:flex; align-items:center; gap:8px;">
+      <i data-lucide="help-circle" style="width:18px;height:18px;color:var(--blue);"></i>
+      What does this result mean?
+    </summary>
+    <div style="margin-top:14px; color:var(--text-secondary); font-size:13.5px; line-height:1.65;">
+      <p><strong>Selection Rate Ratio:</strong> Compares a group's approval rate to the highest-approved group (with at least 100 applicants where available). A ratio of <code>0.75</code> means this group is approved at 75% of the reference group's rate.</p>
+      <p><strong>Fisher Exact Test p-value:</strong> Measures whether the approval gap could plausibly happen by random chance. A small p-value (&lt; 0.05) suggests the disparity is statistically real rather than noise.</p>
+      <p><strong>Equal Opportunity Gap (TPR Gap):</strong> Among applicants who actually repaid their loan (<code>approved = 1</code>), how much lower is this group's approval rate compared to the best group? A large gap means qualified applicants in this group are rejected more often.</p>
+      <p><strong>Why groups with n &lt; 30 show a warning:</strong> Small groups (like 37 foreign workers or tiny age brackets) produce unstable percentages. RGCA flags small sample sizes so you do not build a legal claim on noisy counts.</p>
+    </div>
+  </details>
+</div>
+
+<!-- Protected vs Unaware Model Comparison + Proxy Detection + Global Explainability -->
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title"><i data-lucide="git-branch"></i> Protected vs. Unaware Model Comparison</h3>
+        <p class="card-subtitle">Same 5-fold cross-fit split with vs. without protected columns</p>
+      </div>
+    </div>
+    <div class="table-wrap mb-16">
+      <table>
+        <thead>
+          <tr><th>Variant</th><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1</th><th>ROC-AUC</th><th>Approval</th></tr>
+        </thead>
+        <tbody id="gfCompBody"></tbody>
+      </table>
+    </div>
+    <div class="alert alert-info" style="font-size:12.5px;">
+      <i data-lucide="info"></i>
+      <div>Removing protected attributes does not automatically eliminate disparity because correlated proxy columns can still encode group membership.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title"><i data-lucide="radar"></i> Proxy Feature Detection</h3>
+        <p class="card-subtitle">Predictability of protected attributes from remaining non-protected columns</p>
+      </div>
+    </div>
+    <div id="gfProxyBody"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="bar-chart-horizontal"></i> Global Feature Importance</h3>
+      <p class="card-subtitle">Top model weights from the fitted pipeline</p>
+    </div>
+  </div>
+  <div id="gfGlobalExpBody"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const dsEl = document.getElementById("gfDataset");
+  const modelEl = document.getElementById("gfModel");
+  const attrEl = document.getElementById("gfAttr");
+  const protEl = document.getElementById("gfProtected");
+  const globalDs = document.getElementById("globalDatasetSelect");
+
+  if (globalDs && [...dsEl.options].some(o => o.value === globalDs.value)) {
+    dsEl.value = globalDs.value;
+  }
+
+  let activeCharts = [];
+
+  async function loadFairness() {
+    const params = new URLSearchParams({
+      dataset: dsEl.value,
+      model: modelEl.value,
+      use_protected: protEl.checked ? "true" : "false",
+      attribute: attrEl.value,
+    });
+    const res = await fetch(`/api/fairness?${params}`);
+    const data = await res.json();
+
+    // Update attribute dropdown while preserving selection
+    const prevAttr = attrEl.value;
+    attrEl.innerHTML = `<option value="all">All Protected Attributes</option>` +
+      data.available_attributes.map(a => `<option value="${a.key}">${a.label}</option>`).join("");
+    if ([...attrEl.options].some(o => o.value === prevAttr)) attrEl.value = prevAttr;
+
+    const s = data.summary;
+    document.getElementById("gfOverall").textContent = RGCA.formatPct(s.overall_rate);
+    document.getElementById("gfTotalRows").textContent = `${s.total_rows.toLocaleString()} applicants`;
+    document.getElementById("gfLowest").textContent = RGCA.formatPct(s.lowest_rate);
+    document.getElementById("gfHighest").textContent = RGCA.formatPct(s.highest_rate);
+    document.getElementById("gfMinRatio").textContent = s.min_ratio !== null ? s.min_ratio.toFixed(3) : "—";
+    document.getElementById("gfMinPval").textContent = s.min_p_value !== null ? Number(s.min_p_value).toExponential(2) : "—";
+
+    // Destroy old charts
+    activeCharts.forEach(c => c.destroy());
+    activeCharts = [];
+
+    const chartsWrap = document.getElementById("gfChartsContainer");
+    chartsWrap.innerHTML = "";
+    const tbody = document.getElementById("gfStatsBody");
+    let rowsHtml = "";
+
+    data.attributes.forEach((attr, idx) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      const canvasId = `gfChart_${idx}`;
+      card.innerHTML = `
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">${attr.label}</h3>
+            <p class="card-subtitle">${attr.fairlearn_ratio !== null ? `Fairlearn Demographic Parity Ratio: ${attr.fairlearn_ratio}` : "Approval rate by group"}</p>
+          </div>
+        </div>
+        <div style="height:240px; position:relative;">
+          <canvas id="${canvasId}"></canvas>
+        </div>
+      `;
+      chartsWrap.appendChild(card);
+
+      const colors = attr.groups.map(g => {
+        if (g.tiny_group) return "#94A3B8";
+        if (g.tier === "flag") return "#DC2626";
+        if (g.tier === "review") return "#D97706";
+        return "#0D9488";
+      });
+
+      const chart = new Chart(document.getElementById(canvasId), {
+        type: "bar",
+        data: {
+          labels: attr.groups.map(g => `${g.group} (n=${g.n})`),
+          datasets: [{
+            label: "Approval Rate (%)",
+            data: attr.groups.map(g => g.selection_rate_pct),
+            backgroundColor: colors,
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + "%" } } }
+        }
+      });
+      activeCharts.push(chart);
+
+      attr.groups.forEach(g => {
+        const tierBadge = g.tiny_group
+          ? `<span class="badge badge-neutral">⚪ n &lt; 30 Warning</span>`
+          : g.tier === "flag"
+            ? `<span class="badge badge-danger">🔴 Flag</span>`
+            : g.tier === "review"
+              ? `<span class="badge badge-warning">🟡 Review</span>`
+              : `<span class="badge badge-success">🟢 Fine</span>`;
+
+        const pValStr = g.p_value !== null ? Number(g.p_value).toExponential(2) : "—";
+        const tprGapStr = g.tpr_gap !== null ? `${(g.tpr_gap * 100).toFixed(1)}%` : "—";
+
+        rowsHtml += `<tr>
+          <td><strong>${g.attribute_label}</strong></td>
+          <td>${g.group}</td>
+          <td>${g.n} ${g.tiny_group ? '<span class="badge badge-warning">Small (&lt;30)</span>' : ''}</td>
+          <td>${g.selection_rate_pct}%</td>
+          <td>${g.ratio_vs_best !== null ? g.ratio_vs_best.toFixed(3) : "—"}</td>
+          <td>${pValStr}</td>
+          <td>${tprGapStr}</td>
+          <td>${tierBadge} <span class="text-muted" style="font-size:11.5px; margin-left:4px;">${g.verdict}</span></td>
+        </tr>`;
+      });
+    });
+
+    tbody.innerHTML = rowsHtml;
+
+    // Load Protected vs Unaware Comparison, Proxies, and Global Explainability
+    const [compRes, proxRes, expRes] = await Promise.all([
+      fetch(`/api/model-comparison?dataset=${dsEl.value}&model=${modelEl.value}`),
+      fetch(`/api/proxies?dataset=${dsEl.value}`),
+      fetch(`/api/explainability?dataset=${dsEl.value}&model=${modelEl.value}&use_protected=${protEl.checked ? "true" : "false"}&row_idx=0`),
+    ]);
+    const compData = await compRes.json();
+    const proxData = await proxRes.json();
+    const expData = await expRes.json();
+
+    document.getElementById("gfCompBody").innerHTML = [
+      ["Uses Protected", compData.uses_protected],
+      ["Unaware", compData.unaware],
+    ].map(([lbl, m]) => `<tr>
+      <td><strong>${lbl}</strong></td>
+      <td>${(m.accuracy * 100).toFixed(1)}%</td>
+      <td>${(m.precision * 100).toFixed(1)}%</td>
+      <td>${(m.recall * 100).toFixed(1)}%</td>
+      <td>${m.f1.toFixed(3)}</td>
+      <td>${m.roc_auc.toFixed(3)}</td>
+      <td>${(m.approval_rate * 100).toFixed(1)}%</td>
+    </tr>`).join("");
+
+    const proxBody = document.getElementById("gfProxyBody");
+    if (!proxData.proxies || !proxData.proxies.length) {
+      proxBody.innerHTML = `<div class="alert alert-info">No pre-computed proxy probe results for <code>${dsEl.value}</code>.</div>`;
+    } else {
+      proxBody.innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>Target</th><th>AUC / Lift</th><th>Verdict</th><th>Top Proxy Columns</th></tr></thead>
+        <tbody>${proxData.proxies.map(p => `<tr>
+          <td><strong>${p.target}</strong><div class="text-muted" style="font-size:11px;">${p.reliability}</div></td>
+          <td>${p.auc !== null ? `AUC ${Number(p.auc).toFixed(3)}` : `Lift +${Number(p.lift_over_chance).toFixed(3)}`}</td>
+          <td><span class="badge ${p.verdict.includes("strong") ? "badge-danger" : (p.verdict.includes("some") ? "badge-warning" : "badge-neutral")}">${p.verdict}</span></td>
+          <td>${p.top_columns.map(c => `<code>${c.column}</code>`).join(", ") || "—"}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>`;
+    }
+
+    const expBody = document.getElementById("gfGlobalExpBody");
+    if (!expData.supported) {
+      expBody.innerHTML = `<div class="alert alert-info">${expData.message}</div>`;
+    } else {
+      expBody.innerHTML = `<div style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px;">` +
+        expData.global_weights.map(w => `
+          <div style="display:flex; justify-content:space-between; padding:8px 12px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px;">
+            <code>${w.feature}</code>
+            <strong class="${w.weight >= 0 ? "text-success" : "text-danger"}">${w.weight >= 0 ? "+" : ""}${w.weight.toFixed(3)}</strong>
+          </div>
+        `).join("") + `</div><p class="text-muted" style="font-size:12px; margin-top:10px; margin-bottom:0;">${expData.limitation}</p>`;
+    }
+  }
+
+  [dsEl, modelEl, attrEl, protEl].forEach(el => {
+    el.addEventListener("change", () => {
+      if (el === dsEl) {
+        attrEl.value = "all";
+        if (globalDs) {
+          globalDs.value = dsEl.value;
+          localStorage.setItem("rgca_dataset", dsEl.value);
+        }
+      }
+      loadFairness();
+    });
+  });
+
+  window.addEventListener("rgca:dataset-changed", (e) => {
+    if ([...dsEl.options].some(o => o.value === e.detail)) {
+      dsEl.value = e.detail;
+      attrEl.value = "all";
+      loadFairness();
+    }
+  });
+
+  loadFairness();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,512 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h2>Live Applicant Audit</h2>
+    <p>Inspect original model decisions (Direct Check) and test single-attribute counterfactual flips independently.</p>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-20">
+  <div class="filter-bar">
+    <div class="form-group">
+      <label for="laDataset">Dataset</label>
+      <select id="laDataset" class="form-control">
+        {% for k, meta in datasets.items() %}
+          <option value="{{ k }}">{{ meta.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="laModel">ML Model</label>
+      <select id="laModel" class="form-control">
+        {% for k, lbl in models.items() %}
+          <option value="{{ k }}">{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="laDecision">Decision Filter</label>
+      <select id="laDecision" class="form-control">
+        <option value="all">All Decisions</option>
+        <option value="rejected">Rejected Only</option>
+        <option value="approved">Approved Only</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex:1; min-width:200px;">
+      <label for="laSearch">Search Applicants</label>
+      <input type="text" id="laSearch" class="form-control" placeholder="Search ID, age, status, pincode..." />
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <label class="toggle-label">
+        <input type="checkbox" id="laProtected" checked />
+        <span>Model sees protected traits</span>
+      </label>
+    </div>
+  </div>
+  <div id="syntheticNotice" class="alert alert-warning mt-16 hidden">
+    <i data-lucide="flask-conical"></i>
+    <div><strong>Synthetic Columns Active:</strong> Columns marked with <code>*</code> (<code>syn_pincode</code>, <code>syn_surname_group</code>) are synthetic India-style fields generated for controlled testing, not real applicant records.</div>
+  </div>
+</div>
+
+<!-- Applicant Table -->
+<div class="card mb-20">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="table-2"></i> Applicant Test Split Records</h3>
+      <p class="card-subtitle" id="laTableMeta">Loading records...</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="laTable">
+      <thead id="laThead"></thead>
+      <tbody id="laTbody"></tbody>
+    </table>
+  </div>
+  <div class="pagination-bar">
+    <span id="laPageInfo">Page 1 of 1</span>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-secondary btn-sm" id="laPrevBtn">Previous</button>
+      <button class="btn btn-secondary btn-sm" id="laNextBtn">Next</button>
+    </div>
+  </div>
+</div>
+
+<!-- A. DIRECT CHECK (Independent State & Container) -->
+<div class="card mb-20" id="directCheckPanel">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="check-square"></i> A. Direct Check — Original Model Prediction</h3>
+      <p class="card-subtitle">Displays the unmodified out-of-fold model decision immediately upon applicant selection.</p>
+    </div>
+    <span class="badge badge-blue" id="dcSelectedBadge">No applicant selected</span>
+  </div>
+
+  <div id="dcEmptyState" class="alert alert-info">
+    <i data-lucide="mouse-pointer-click"></i>
+    <div>Click <strong>Inspect</strong> on any Approved or Rejected applicant in the table above to view their original model prediction immediately.</div>
+  </div>
+
+  <div id="dcContent" class="hidden">
+    <div class="grid-4 mb-16">
+      <div class="metric-card">
+        <div class="metric-label">Applicant ID</div>
+        <div class="metric-value" id="dcAppId">—</div>
+        <div class="metric-foot" id="dcModelName">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Model Prediction</div>
+        <div class="metric-value" id="dcModelPred">—</div>
+        <div class="metric-foot" id="dcProbText">Probability: —</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Actual Historical Target</div>
+        <div class="metric-value" id="dcActualTarget">—</div>
+        <div class="metric-foot">Ground-truth dataset label</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Decision Cutoff</div>
+        <div class="metric-value" id="dcCutoff">—</div>
+        <div class="metric-foot">No features modified</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div style="border:1px solid var(--border); border-radius:10px; padding:16px; background:#F8FAFC;">
+        <strong style="display:block; margin-bottom:10px; color:var(--navy);">Original Applicant Attributes</strong>
+        <div id="dcAttrGrid" style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; font-size:13px;"></div>
+      </div>
+      <div style="border:1px solid var(--border); border-radius:10px; padding:16px; background:#FFFFFF;">
+        <strong style="display:block; margin-bottom:10px; color:var(--navy);">Local Feature Contributions</strong>
+        <div id="dcExplainBox" style="font-size:12.5px; color:var(--text-secondary);">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- B. FLIP ONE TRAIT – COUNTERFACTUAL TEST (Independent State & Container) -->
+<div class="card" id="cfPanel">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="git-compare"></i> B. Flip One Trait – Watch the Decision Change</h3>
+      <p class="card-subtitle">Change exactly one protected attribute on a copy of the selected applicant. Direct Check above remains untouched.</p>
+    </div>
+    <span class="badge badge-neutral" id="cfSelectedBadge">Waiting for applicant</span>
+  </div>
+
+  <div id="cfEmptyState" class="alert alert-info">
+    <i data-lucide="info"></i>
+    <div>Select an applicant from the table above to prepare counterfactual inputs.</div>
+  </div>
+
+  <div id="cfWorkspace" class="hidden">
+    <div style="border:1px solid var(--border); border-radius:10px; padding:16px; background:#FFFFFF; margin-bottom:16px;">
+      <div class="filter-bar">
+        <div class="form-group" style="flex:1; min-width:200px;">
+          <label for="cfFlipSelect">Protected Attribute</label>
+          <select id="cfFlipSelect" class="form-control"></select>
+        </div>
+        <div class="form-group" style="flex:1; min-width:220px;">
+          <label for="cfValueSelect">Alternative Valid Value <span id="cfOrigValHint" class="text-muted" style="font-weight:400;"></span></label>
+          <select id="cfValueSelect" class="form-control"></select>
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <button class="btn btn-primary" id="cfRunBtn">
+            <i data-lucide="play"></i> Run Counterfactual Test
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 Clearly Separated Result Areas -->
+    <div id="cfResultSection" class="hidden">
+      <div class="grid-2 mb-16">
+        <div style="border:1px solid var(--border); border-radius:10px; padding:14px; background:#F8FAFC;">
+          <div class="cf-card-label" style="margin-bottom:6px;">1. Original Applicant</div>
+          <div id="cfOrigSummary" style="font-size:13px;">—</div>
+        </div>
+        <div style="border:1px solid var(--border); border-radius:10px; padding:14px; background:#EFF6FF;">
+          <div class="cf-card-label" style="margin-bottom:6px;">2. Modified Applicant (1 Feature Changed)</div>
+          <div id="cfModSummary" style="font-size:13px;">—</div>
+        </div>
+      </div>
+
+      <div class="cf-cards mb-16">
+        <div class="cf-result-card" id="cfCardBefore">
+          <div class="cf-card-label">3. BEFORE (Original Prediction)</div>
+          <div class="cf-card-main" id="cfBeforeDecision">—</div>
+          <div class="cf-card-sub" id="cfBeforeProb">Probability: —</div>
+        </div>
+        <div class="cf-result-card" id="cfCardAfter">
+          <div class="cf-card-label">4. AFTER (Counterfactual Prediction)</div>
+          <div class="cf-card-main" id="cfAfterDecision">—</div>
+          <div class="cf-card-sub" id="cfAfterProb">Probability: —</div>
+        </div>
+        <div class="cf-result-card" id="cfCardChanged">
+          <div class="cf-card-label">DECISION CHANGED?</div>
+          <div class="cf-card-main" id="cfChangedVal">—</div>
+          <div class="cf-card-sub" id="cfProbDelta">Probability Diff: —</div>
+        </div>
+      </div>
+
+      <div id="cfExplanationBox" class="alert mb-16">
+        <i data-lucide="alert-circle"></i>
+        <div id="cfExplanationText"></div>
+      </div>
+
+      <div style="border-top:1px solid var(--border); padding-top:16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+          <strong>Check Applicable Legal Rules for This Finding</strong>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <select id="cfJurSelect" class="form-control" style="width:140px;">
+              <option value="US">United States (US)</option>
+              <option value="EU">European Union (EU)</option>
+              <option value="IN">India (IN)</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" id="cfCheckLawBtn">
+              <i data-lucide="landmark"></i> Check Law
+            </button>
+          </div>
+        </div>
+        <div id="cfLegalCards" class="grid-3"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const dsEl = document.getElementById("laDataset");
+  const modelEl = document.getElementById("laModel");
+  const decEl = document.getElementById("laDecision");
+  const searchEl = document.getElementById("laSearch");
+  const protEl = document.getElementById("laProtected");
+  const globalDs = document.getElementById("globalDatasetSelect");
+
+  if (globalDs && [...dsEl.options].some(o => o.value === globalDs.value)) {
+    dsEl.value = globalDs.value;
+  }
+
+  let tableState = { page: 1, sort: "id", dir: "asc", selectedId: null };
+  let directState = { applicant: null };
+  let cfState = { flips: [], lastFinding: "", featureCount: 0 };
+
+  async function loadApplicants() {
+    const isSyn = dsEl.value.startsWith("scenario");
+    document.getElementById("syntheticNotice").classList.toggle("hidden", !isSyn);
+
+    const params = new URLSearchParams({
+      dataset: dsEl.value,
+      model: modelEl.value,
+      use_protected: protEl.checked ? "true" : "false",
+      decision: decEl.value,
+      search: searchEl.value,
+      sort: tableState.sort,
+      dir: tableState.dir,
+      page: tableState.page,
+      per_page: 10,
+    });
+
+    const res = await fetch(`/api/applicants?${params}`);
+    const data = await res.json();
+
+    document.getElementById("laTableMeta").textContent =
+      `Showing ${data.rows.length} of ${data.total} applicants · Decision cutoff: ${data.cutoff}`;
+    document.getElementById("laPageInfo").textContent = `Page ${data.page} of ${data.total_pages}`;
+    document.getElementById("laPrevBtn").disabled = data.page <= 1;
+    document.getElementById("laNextBtn").disabled = data.page >= data.total_pages;
+
+    const thead = document.getElementById("laThead");
+    thead.innerHTML = `<tr>
+      <th class="sortable" data-sort="id">ID</th>
+      ${data.columns.map(c => `<th class="sortable" data-sort="${c.key}">${c.label}</th>`).join("")}
+      <th class="sortable" data-sort="decision">Model Decision</th>
+      <th class="sortable" data-sort="prob">Prob (Good)</th>
+      <th>Action</th>
+    </tr>`;
+
+    thead.querySelectorAll("th.sortable").forEach(th => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.sort;
+        if (tableState.sort === key) tableState.dir = tableState.dir === "asc" ? "desc" : "asc";
+        else { tableState.sort = key; tableState.dir = "asc"; }
+        loadApplicants();
+      });
+    });
+
+    const tbody = document.getElementById("laTbody");
+    tbody.innerHTML = data.rows.map(r => {
+      const decBadge = r.decision === 1
+        ? `<span class="badge badge-success">Approved</span>`
+        : `<span class="badge badge-danger">Rejected</span>`;
+      const cells = data.columns.map(c => `<td>${r.cells[c.key] ?? "—"}</td>`).join("");
+      const selClass = tableState.selectedId === r.id ? "row-selected" : "";
+      return `<tr class="${selClass}">
+        <td><strong>#${r.id}</strong></td>
+        ${cells}
+        <td>${decBadge}</td>
+        <td>${Number(r.prob).toFixed(3)}</td>
+        <td><button class="btn btn-secondary btn-sm inspect-btn" data-id="${r.id}">Inspect</button></td>
+      </tr>`;
+    }).join("");
+
+    tbody.querySelectorAll(".inspect-btn").forEach(btn => {
+      btn.addEventListener("click", () => selectApplicant(Number(btn.dataset.id)));
+    });
+  }
+
+  function clearCounterfactualResults() {
+    cfState.lastFinding = "";
+    document.getElementById("cfResultSection").classList.add("hidden");
+    document.getElementById("cfLegalCards").innerHTML = "";
+  }
+
+  async function selectApplicant(rowId) {
+    tableState.selectedId = rowId;
+    clearCounterfactualResults();
+
+    const params = new URLSearchParams({
+      dataset: dsEl.value,
+      model: modelEl.value,
+      use_protected: protEl.checked ? "true" : "false",
+    });
+    const [res, expRes] = await Promise.all([
+      fetch(`/api/applicant/${rowId}?${params}`),
+      fetch(`/api/explainability?${params}&row_idx=${rowId}`),
+    ]);
+    const data = await res.json();
+    const expData = await expRes.json();
+
+    // 1. Update Direct Check immediately (independent state)
+    directState.applicant = data;
+    document.getElementById("dcEmptyState").classList.add("hidden");
+    document.getElementById("dcContent").classList.remove("hidden");
+    document.getElementById("dcSelectedBadge").textContent = `Applicant #${rowId}`;
+    document.getElementById("dcAppId").textContent = `#${rowId}`;
+    document.getElementById("dcModelName").textContent = `${modelEl.options[modelEl.selectedIndex].text} (${protEl.checked ? "Uses Protected" : "Unaware"})`;
+    document.getElementById("dcModelPred").innerHTML = data.decision === 1
+      ? `<span class="text-success">✅ Approved</span>`
+      : `<span class="text-danger">❌ Rejected</span>`;
+    document.getElementById("dcProbText").textContent = `Probability: ${data.prob.toFixed(4)}`;
+    const actualVal = data.attributes["Actual"];
+    document.getElementById("dcActualTarget").textContent = actualVal === 1 ? "Good (1)" : (actualVal === 0 ? "Bad (0)" : String(actualVal ?? "—"));
+    document.getElementById("dcCutoff").textContent = data.cutoff.toFixed(2);
+
+    document.getElementById("dcAttrGrid").innerHTML = Object.entries(data.attributes).map(([k, v]) =>
+      `<div><span class="text-muted">${k}:</span> <strong>${v}</strong></div>`
+    ).join("");
+
+    const expBox = document.getElementById("dcExplainBox");
+    if (!expData.supported) {
+      expBox.innerHTML = `<div class="alert alert-info" style="padding:10px;">${expData.message}</div>`;
+    } else {
+      expBox.innerHTML = expData.local_contributions.map(c => {
+        const cls = c.contribution >= 0 ? "text-success" : "text-danger";
+        return `<div style="display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #F1F5F9;">
+          <code>${c.feature}</code>
+          <strong class="${cls}">${c.contribution >= 0 ? "+" : ""}${c.contribution.toFixed(3)}</strong>
+        </div>`;
+      }).join("") + `<div class="text-muted" style="font-size:11px; margin-top:6px;">${expData.limitation}</div>`;
+    }
+
+    // 2. Prepare Flip One Trait inputs (without executing test)
+    cfState.flips = data.flips || [];
+    cfState.featureCount = Object.keys(data.feature_values || {}).length;
+    document.getElementById("cfEmptyState").classList.add("hidden");
+    document.getElementById("cfWorkspace").classList.remove("hidden");
+    document.getElementById("cfSelectedBadge").textContent = `Applicant #${rowId} Ready`;
+
+    const flipSelect = document.getElementById("cfFlipSelect");
+    const valSelect = document.getElementById("cfValueSelect");
+    const origHint = document.getElementById("cfOrigValHint");
+
+    function populateValueOptions() {
+      const selectedFlip = cfState.flips.find(f => f.col === flipSelect.value);
+      if (!selectedFlip) {
+        valSelect.innerHTML = `<option value="">—</option>`;
+        origHint.textContent = "";
+        return;
+      }
+      origHint.textContent = `(was: ${selectedFlip.old_display})`;
+      const opts = selectedFlip.options || [{ value: selectedFlip.new_val, label: selectedFlip.new_display }];
+      valSelect.innerHTML = opts.map(o => `<option value="${o.value}">${o.label}</option>`).join("");
+    }
+
+    if (!cfState.flips.length) {
+      flipSelect.innerHTML = `<option value="">No valid protected attribute flip for this row</option>`;
+      valSelect.innerHTML = `<option value="">—</option>`;
+      origHint.textContent = "";
+      document.getElementById("cfRunBtn").disabled = true;
+    } else {
+      flipSelect.innerHTML = cfState.flips.map(f => `<option value="${f.col}">${f.label}</option>`).join("");
+      populateValueOptions();
+      document.getElementById("cfRunBtn").disabled = false;
+    }
+    flipSelect.onchange = populateValueOptions;
+
+    loadApplicants();
+  }
+
+  document.getElementById("cfRunBtn").addEventListener("click", async () => {
+    const col = document.getElementById("cfFlipSelect").value;
+    const newVal = document.getElementById("cfValueSelect").value;
+    if (!col || tableState.selectedId === null) return;
+
+    const res = await fetch("/api/counterfactual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset: dsEl.value,
+        model: modelEl.value,
+        use_protected: protEl.checked,
+        row_idx: tableState.selectedId,
+        col,
+        new_val: newVal,
+      }),
+    });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+
+    cfState.lastFinding = data.finding_text;
+    document.getElementById("cfResultSection").classList.remove("hidden");
+
+    document.getElementById("cfOrigSummary").innerHTML =
+      `<strong>Applicant #${data.row_idx}</strong> · <code>${data.flip.label}</code> = <strong>${data.flip.old_display}</strong>`;
+    document.getElementById("cfModSummary").innerHTML =
+      `<strong>Applicant #${data.row_idx} (Copy)</strong> · <code>${data.flip.label}</code> = <strong>${data.flip.new_display}</strong> · <em>${Math.max(0, cfState.featureCount - 1)} other model features preserved</em>`;
+
+    const beforeCard = document.getElementById("cfCardBefore");
+    beforeCard.className = `cf-result-card ${data.old_decision === 1 ? "approved" : "rejected"}`;
+    document.getElementById("cfBeforeDecision").textContent = data.old_decision === 1 ? "✅ Approved" : "❌ Rejected";
+    document.getElementById("cfBeforeProb").textContent = `Probability: ${data.old_prob.toFixed(4)} (cutoff ${data.cutoff})`;
+
+    const afterCard = document.getElementById("cfCardAfter");
+    afterCard.className = `cf-result-card ${data.new_decision === 1 ? "approved" : "rejected"}`;
+    document.getElementById("cfAfterDecision").textContent = data.new_decision === 1 ? "✅ Approved" : "❌ Rejected";
+    document.getElementById("cfAfterProb").textContent = `Probability: ${data.new_prob.toFixed(4)} (cutoff ${data.cutoff})`;
+
+    const chCard = document.getElementById("cfCardChanged");
+    chCard.className = `cf-result-card ${data.decision_changed ? "changed" : ""}`;
+    document.getElementById("cfChangedVal").textContent = data.decision_changed ? "YES" : "NO";
+    document.getElementById("cfProbDelta").textContent = `Probability Diff: ${data.prob_diff >= 0 ? "+" : ""}${data.prob_diff.toFixed(4)}`;
+
+    const expBox = document.getElementById("cfExplanationBox");
+    expBox.className = `alert mb-16 ${data.decision_changed ? "alert-warning" : "alert-info"}`;
+    document.getElementById("cfExplanationText").textContent = data.explanation;
+    document.getElementById("cfLegalCards").innerHTML = "";
+    RGCA.refreshIcons();
+  });
+
+  document.getElementById("cfCheckLawBtn").addEventListener("click", async () => {
+    if (!cfState.lastFinding) return;
+    const jur = document.getElementById("cfJurSelect").value;
+    const container = document.getElementById("cfLegalCards");
+    container.innerHTML = `<div class="text-muted">Retrieving &amp; checking rule cards...</div>`;
+
+    const res = await fetch("/api/legal/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jurisdiction: jur,
+        test_type: "counterfactual",
+        finding_text: cfState.lastFinding,
+        run_llm: false,
+      }),
+    });
+    const data = await res.json();
+    if (!data.cards.length) {
+      container.innerHTML = `<div class="text-muted">No matching rule cards for this combination.</div>`;
+      return;
+    }
+    container.innerHTML = data.cards.map(item => `
+      <div style="border:1px solid var(--border); border-radius:10px; padding:14px; background:#F8FAFC;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:8px;">
+          <code style="font-weight:700;">${item.card.id}</code>
+          ${RGCA.labelBadge(item.label)}
+        </div>
+        <div style="font-size:12.5px; color:var(--navy); margin-bottom:6px;"><strong>Rule:</strong> ${item.card.obligation}</div>
+        <div style="font-size:12px; color:var(--text-muted);"><strong>Check:</strong> ${item.reason}</div>
+      </div>
+    `).join("");
+  });
+
+  [dsEl, modelEl, decEl, protEl].forEach(el => {
+    el.addEventListener("change", () => {
+      tableState.page = 1;
+      clearCounterfactualResults();
+      if (el === dsEl && globalDs) {
+        globalDs.value = dsEl.value;
+        localStorage.setItem("rgca_dataset", dsEl.value);
+      }
+      loadApplicants();
+    });
+  });
+
+  let searchTimer;
+  searchEl.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { tableState.page = 1; loadApplicants(); }, 250);
+  });
+
+  document.getElementById("laPrevBtn").addEventListener("click", () => { tableState.page--; loadApplicants(); });
+  document.getElementById("laNextBtn").addEventListener("click", () => { tableState.page++; loadApplicants(); });
+
+  window.addEventListener("rgca:dataset-changed", (e) => {
+    if ([...dsEl.options].some(o => o.value === e.detail)) {
+      dsEl.value = e.detail;
+      tableState.page = 1;
+      clearCounterfactualResults();
+      loadApplicants();
+    }
+  });
+
+  loadApplicants();
+});
+</script>
+{% endblock %}

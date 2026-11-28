@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h2>Audit Reports</h2>
+    <p>Inspect and export generated fairness, counterfactual, proxy, ablation, and citation verification artifacts.</p>
+  </div>
+</div>
+
+<div class="card mb-20">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="file-output"></i> Generate Comprehensive Compliance Report</h3>
+      <p class="card-subtitle">Compile live model performance, group fairness, proxy findings, and legal applicability into PDF or JSON</p>
+    </div>
+  </div>
+  <div class="filter-bar">
+    <div class="form-group">
+      <label for="genDataset">Dataset</label>
+      <select id="genDataset" class="form-control">
+        <option value="german">South German Credit</option>
+        <option value="taiwan">Taiwan Credit Cards</option>
+        <option value="scenario_B">Scenario B (Planted)</option>
+        <option value="scenario_A">Scenario A (Clean)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="genModel">Model</label>
+      <select id="genModel" class="form-control">
+        <option value="logistic">Logistic Regression</option>
+        <option value="boosted">HistGradientBoosting</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="genJur">Jurisdiction</label>
+      <select id="genJur" class="form-control">
+        <option value="US">United States (US)</option>
+        <option value="EU">European Union (EU)</option>
+        <option value="IN">India (IN)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <div style="display:flex; gap:10px;">
+        <a id="genPdfBtn" href="/api/reports/generate/pdf?dataset=german&model=logistic&jurisdiction=US" class="btn btn-primary">
+          <i data-lucide="file-text"></i> Download PDF
+        </a>
+        <a id="genJsonBtn" href="/api/reports/generate/json?dataset=german&model=logistic&jurisdiction=US" class="btn btn-secondary">
+          <i data-lucide="braces"></i> Download JSON
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-20">
+  <div class="filter-bar" style="justify-content:space-between;">
+    <div class="form-group" style="min-width:280px;">
+      <label for="repSelect">Select Report Artifact</label>
+      <select id="repSelect" class="form-control">
+        {% for f in report_files %}
+          <option value="{{ f.name }}" {% if f.name == 'fairness_results.csv' %}selected{% endif %}>{{ f.name }} ({{ f.size_kb }} KB)</option>
+        {% endfor %}
+      </select>
+    </div>
+    <a id="repDownloadBtn" href="#" class="btn btn-primary">
+      <i data-lucide="download"></i> Download File
+    </a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title" id="repTitle">Report Preview</h3>
+      <p class="card-subtitle" id="repMeta">Loading...</p>
+    </div>
+  </div>
+  <div id="repBody"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const sel = document.getElementById("repSelect");
+  const dl = document.getElementById("repDownloadBtn");
+
+  async function loadReport() {
+    const name = sel.value;
+    if (!name) return;
+    dl.href = `/api/reports/download/${encodeURIComponent(name)}`;
+    document.getElementById("repTitle").textContent = name;
+
+    const res = await fetch(`/api/reports/data?name=${encodeURIComponent(name)}&limit=100`);
+    const data = await res.json();
+    const body = document.getElementById("repBody");
+
+    if (data.type === "json") {
+      document.getElementById("repMeta").textContent = "JSON artifact";
+      body.innerHTML = `<pre style="background:#0F172A; color:#E2E8F0; padding:16px; border-radius:10px; overflow:auto; max-height:480px; font-size:12.5px;">${JSON.stringify(data.data, null, 2)}</pre>`;
+      return;
+    }
+
+    document.getElementById("repMeta").textContent = `Showing ${data.rows.length} of ${data.total_rows} rows`;
+    body.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr>${data.columns.map(c => `<th>${c}</th>`).join("")}</tr></thead>
+      <tbody>${data.rows.map(r => `<tr>${data.columns.map(c => `<td>${r[c] ?? "—"}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table></div>`;
+  }
+
+  const genDs = document.getElementById("genDataset");
+  const genModel = document.getElementById("genModel");
+  const genJur = document.getElementById("genJur");
+  function syncGenLinks() {
+    const q = `dataset=${genDs.value}&model=${genModel.value}&jurisdiction=${genJur.value}`;
+    document.getElementById("genPdfBtn").href = `/api/reports/generate/pdf?${q}`;
+    document.getElementById("genJsonBtn").href = `/api/reports/generate/json?${q}`;
+  }
+  [genDs, genModel, genJur].forEach(el => el.addEventListener("change", syncGenLinks));
+
+  sel.addEventListener("change", loadReport);
+  loadReport();
+});
+</script>
+{% endblock %}

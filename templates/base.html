@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ page_title }} · RGCA AI Loan Auditor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app-shell" id="appShell">
+    <!-- Persistent Left Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <a href="{{ url_for('page_overview') }}" class="brand">
+          <div class="brand-icon">
+            <i data-lucide="scale"></i>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">RGCA</span>
+            <span class="brand-sub">AI Loan Auditor</span>
+          </div>
+        </a>
+        <button class="icon-btn sidebar-toggle" id="sidebarToggle" title="Collapse / Expand Sidebar" aria-label="Toggle Sidebar">
+          <i data-lucide="panel-left-close"></i>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Main Navigation">
+        <div class="nav-section-label">Audit Workspace</div>
+        <a href="{{ url_for('page_overview') }}" class="nav-item {% if active_page == 'overview' %}active{% endif %}">
+          <i data-lucide="layout-dashboard"></i>
+          <span class="nav-label">Overview</span>
+        </a>
+        <a href="{{ url_for('page_live_audit') }}" class="nav-item {% if active_page == 'live_audit' %}active{% endif %}">
+          <i data-lucide="scan-search"></i>
+          <span class="nav-label">Live Audit</span>
+        </a>
+        <a href="{{ url_for('page_group_fairness') }}" class="nav-item {% if active_page == 'group_fairness' %}active{% endif %}">
+          <i data-lucide="bar-chart-3"></i>
+          <span class="nav-label">Group Fairness</span>
+        </a>
+        <a href="{{ url_for('page_counterfactuals') }}" class="nav-item {% if active_page == 'counterfactuals' %}active{% endif %}">
+          <i data-lucide="git-compare"></i>
+          <span class="nav-label">Counterfactual Testing</span>
+        </a>
+
+        <div class="nav-section-label">Governance &amp; Proof</div>
+        <a href="{{ url_for('page_legal') }}" class="nav-item {% if active_page == 'legal' %}active{% endif %}">
+          <i data-lucide="landmark"></i>
+          <span class="nav-label">Legal Intelligence</span>
+        </a>
+        <a href="{{ url_for('page_scenarios') }}" class="nav-item {% if active_page == 'scenarios' %}active{% endif %}">
+          <i data-lucide="flask-conical"></i>
+          <span class="nav-label">Scenario Testing</span>
+        </a>
+        <a href="{{ url_for('page_reports') }}" class="nav-item {% if active_page == 'reports' %}active{% endif %}">
+          <i data-lucide="file-check-2"></i>
+          <span class="nav-label">Audit Reports</span>
+        </a>
+        <a href="{{ url_for('page_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+          <i data-lucide="settings"></i>
+          <span class="nav-label">Settings</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-pill">
+          <span class="status-dot online"></span>
+          <div class="status-meta">
+            <span class="status-title">Auditor Engine Ready</span>
+            <span class="status-sub">{{ sys_status.cards_count }} rule cards · {{ sys_status.audit_date }}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="main-wrapper">
+      <!-- Top Navigation Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn mobile-menu-btn" id="mobileMenuBtn" aria-label="Open Menu">
+            <i data-lucide="menu"></i>
+          </button>
+          <div>
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+              {% for crumb in breadcrumbs %}
+                <span class="crumb {% if loop.last %}current{% endif %}">{{ crumb }}</span>
+                {% if not loop.last %}<i data-lucide="chevron-right" class="crumb-sep"></i>{% endif %}
+              {% endfor %}
+            </nav>
+            <h1 class="topbar-title">{{ page_title }}</h1>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <div class="global-dataset-wrap" id="globalDatasetWrap" title="Global Dataset Context">
+            <i data-lucide="database"></i>
+            <select id="globalDatasetSelect" class="topbar-select" aria-label="Global Dataset">
+              <option value="german">South German Credit</option>
+              <option value="taiwan">Taiwan Credit Cards</option>
+              <option value="scenario_B">Scenario B (Planted Bias)</option>
+              <option value="scenario_A">Scenario A (Clean)</option>
+            </select>
+          </div>
+
+          <span class="audit-status-badge">
+            <span class="dot"></span>
+            Audit Active · {{ sys_status.audit_date }}
+          </span>
+
+          <div class="notif-wrap">
+            <button class="icon-btn" id="notifBtn" aria-label="Notifications" title="System Notifications">
+              <i data-lucide="bell"></i>
+              <span class="notif-badge"></span>
+            </button>
+            <div class="notif-popover hidden" id="notifPopover">
+              <div class="popover-header">
+                <span>System Status</span>
+                <span class="badge badge-teal">{{ sys_status.cards_count }} Cards</span>
+              </div>
+              <div class="popover-body">
+                <div class="notif-item">
+                  <i data-lucide="check-circle-2" class="text-success"></i>
+                  <div>
+                    <strong>Core Engines Loaded</strong>
+                    <p>ML cross-fitting, Fairness &amp; Applicability engines online.</p>
+                  </div>
+                </div>
+                <div class="notif-item">
+                  <i data-lucide="{{ 'check-circle-2' if sys_status.groq_configured else 'alert-triangle' }}" class="{{ 'text-success' if sys_status.groq_configured else 'text-warning' }}"></i>
+                  <div>
+                    <strong>Groq LLM Explanation</strong>
+                    <p>{{ 'API key detected in environment.' if sys_status.groq_configured else 'GROQ_API_KEY not set. Deterministic cards still work.' }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="user-profile">
+            <div class="avatar">CA</div>
+            <div class="user-info">
+              <span class="user-name">Compliance Lead</span>
+              <span class="user-role">Model Governance</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="content-area">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

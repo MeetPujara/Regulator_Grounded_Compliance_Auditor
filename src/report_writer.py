@@ -13,7 +13,13 @@ from groq import Groq
 
 # Load API key from .env
 load_dotenv()
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+
+def _get_client():
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return None
+    return Groq(api_key=api_key)
 
 SYSTEM_PROMPT = """You are a regulatory compliance auditor. Your job is to write a 
 short, plain-English explanation of a fairness finding for a non-technical bank manager.
@@ -54,6 +60,10 @@ def write_report(finding_text, checked_cards):
     
     Write the audit report paragraph following all rules.
     """
+
+    client = _get_client()
+    if client is None:
+        return "[ERROR: GROQ_API_KEY is not set in .env.]"
 
     try:
         response = client.chat.completions.create(

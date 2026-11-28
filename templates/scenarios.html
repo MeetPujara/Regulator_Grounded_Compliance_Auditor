@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h2>Scenario Testing (Proof)</h2>
+    <p>Verify that the auditor detects deliberately planted bias (Scenario B) and avoids false alarms on clean data (Scenario A).</p>
+  </div>
+</div>
+
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title"><i data-lucide="shield-check"></i> Scenario A — Clean Data</h3>
+        <p class="card-subtitle">Synthetic pincode &amp; surname columns independent of outcomes</p>
+      </div>
+      <span id="scenABadge" class="badge badge-neutral">Loading...</span>
+    </div>
+    <div id="scenABody"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title"><i data-lucide="siren"></i> Scenario B — Planted Bias</h3>
+        <p class="card-subtitle">Deliberate rejections planted in target pincode &amp; surname group</p>
+      </div>
+      <span id="scenBBadge" class="badge badge-neutral">Loading...</span>
+    </div>
+    <div id="scenBBody"></div>
+  </div>
+</div>
+
+<div class="card mb-20">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><i data-lucide="bar-chart-2"></i> Flip Rates: Single Attribute vs. Intersectional Bundle</h3>
+      <p class="card-subtitle">Comparing counterfactual flip rates in Scenario A vs. Scenario B</p>
+    </div>
+  </div>
+  <div style="height:280px; position:relative;">
+    <canvas id="scenarioFlipChart"></canvas>
+  </div>
+</div>
+
+<div class="card">
+  <h3 class="card-title mb-16"><i data-lucide="info"></i> Why Controlled Scenarios Matter</h3>
+  <p style="margin:0; color:var(--text-secondary); font-size:13.5px; line-height:1.6;">
+    A compliance tool that flags everything cries wolf; a tool that flags nothing misses real discrimination.
+    Scenario A confirms zero false alarms on independent synthetic columns, while Scenario B confirms the auditor catches planted bias — and demonstrates that a <strong>bundle flip</strong> (pincode + surname together) reveals intersectional bias that single-attribute tests can underestimate.
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  const res = await fetch("/api/scenarios");
+  const data = await res.json();
+
+  if (!data.fairness.length) {
+    document.getElementById("scenABody").innerHTML = `<div class="alert alert-info">Run <code>python src/05_scenarios.py</code> to generate scenario reports.</div>`;
+    return;
+  }
+
+  const aRows = data.fairness.filter(r => r.scenario === "A_clean");
+  const bRows = data.fairness.filter(r => r.scenario === "B_planted");
+  const aFlags = aRows.filter(r => String(r.verdict).startsWith("FLAG"));
+  const bFlags = bRows.filter(r => String(r.verdict).startsWith("FLAG"));
+
+  const aBadge = document.getElementById("scenABadge");
+  aBadge.className = `badge ${aFlags.length === 0 ? "badge-success" : "badge-danger"}`;
+  aBadge.textContent = aFlags.length === 0 ? "0 Flags · Clean" : `${aFlags.length} Unexpected Flags`;
+
+  document.getElementById("scenABody").innerHTML = aFlags.length === 0
+    ? `<div class="alert alert-success"><i data-lucide="check-circle-2"></i><div><strong>No synthetic bias flagged.</strong> The auditor stayed quiet on clean data across ${aRows.length} group evaluations.</div></div>`
+    : `<div class="alert alert-danger">Unexpected flags detected in clean scenario.</div>`;
+
+  const bBadge = document.getElementById("scenBBadge");
+  bBadge.className = `badge ${bFlags.length > 0 ? "badge-danger" : "badge-warning"}`;
+  bBadge.textContent = bFlags.length > 0 ? `${bFlags.length} Flags Detected` : "Not Detected";
+
+  document.getElementById("scenBBody").innerHTML = bFlags.length > 0
+    ? `<div class="alert alert-danger mb-16"><i data-lucide="alert-triangle"></i><div><strong>Planted bias detected!</strong> ${bFlags.length} group flags triggered.</div></div>` +
+      `<div class="table-wrap"><table><thead><tr><th>Attribute</th><th>Group</th><th>Ratio</th><th>p-value</th></tr></thead><tbody>` +
+      bFlags.slice(0, 6).map(r => `<tr><td>${r.attribute}</td><td>${r.group}</td><td>${Number(r.ratio_vs_best).toFixed(3)}</td><td>${Number(r.p_value).toExponential(2)}</td></tr>`).join("") +
+      `</tbody></table></div>`
+    : `<div class="alert alert-warning">Planted bias was not flagged.</div>`;
+
+  if (data.flips.length) {
+    const labels = [...new Set(data.flips.map(f => f.flip))];
+    const aRates = labels.map(l => {
+      const m = data.flips.find(f => f.scenario === "A_clean" && f.flip === l);
+      return m && m.flip_rate ? +(m.flip_rate * 100).toFixed(1) : 0;
+    });
+    const bRates = labels.map(l => {
+      const m = data.flips.find(f => f.scenario === "B_planted" && f.flip === l);
+      return m && m.flip_rate ? +(m.flip_rate * 100).toFixed(1) : 0;
+    });
+
+    new Chart(document.getElementById("scenarioFlipChart"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Scenario A (Clean) Flip %", data: aRates, backgroundColor: "#0D9488", borderRadius: 6 },
+          { label: "Scenario B (Planted) Flip %", data: bRates, backgroundColor: "#DC2626", borderRadius: 6 },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, ticks: { callback: v => v + "%" } } }
+      }
+    });
+  }
+  RGCA.refreshIcons();
+});
+</script>
+{% endblock %}
